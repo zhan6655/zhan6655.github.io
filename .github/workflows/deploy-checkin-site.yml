@@ -1,0 +1,28 @@
+name: deploy-checkin-site-v4
+on:
+  push:
+    paths-ignore:
+      - 'index.html'
+      - 'icon.png'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: deploy-site-v4
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch page
+        run: curl -fsSL "https://aka.doubaocdn.com/s/P0Tpts0RcI" -o index.html
+      - name: Verify hash
+        run: test "$(sha256sum index.html | cut -d' ' -f1)" = "89079674b7627d058a8727e0e98b7b81f8fadbfaaa12b118feb58b99c7f89d8a"
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "deploy: watermark with address v4" || echo "no changes"
+          git push

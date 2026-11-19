@@ -1,0 +1,33 @@
+name: deploy-checkin-site
+on:
+  push:
+    paths-ignore:
+      - 'index.html'
+      - 'icon.png'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch page bytes
+        run: |
+          curl -fsSL "https://aka.doubaocdn.com/s/HjpkfGXr0O" -o index.html
+          curl -fsSL "https://aka.doubaocdn.com/s/xVbd7Gd2Vj" -o icon.png
+          sha256sum index.html icon.png
+      - name: Verify hashes
+        run: |
+          test "$(sha256sum index.html | cut -d' ' -f1)" = "fef5732cf973de5ed31f71fb5d86357219712228e32fd80626f489e1f0bb7e4f"
+          test "$(sha256sum icon.png | cut -d' ' -f1)" = "e7c4f50314a57e68d5c78d57df19af45c2bca1cac359e8dfa1bd34a049458844"
+      - name: Commit site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html icon.png
+          git commit -m "deploy: checkin app v1" || echo "no changes"
+          git push

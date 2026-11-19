@@ -373,9 +373,11 @@ main{flex:1;padding:16px 16px 12px}
         <div class="set-card">
           <div class="set-row"><span class="k"><b>照片水印</b><span>把时间、地点、类型烙在照片上</span></span><div class="switch" id="swWatermark"></div></div>
           <div class="set-row"><span class="k"><b>记录定位</b><span>打卡时记录经纬度（需授权）</span></span><div class="switch" id="swGeo"></div></div>
+          <div class="set-row"><span class="k"><b>地址解析</b><span>把经纬度换成中文地址，一起烙在照片上</span></span><div class="switch" id="swAddr"></div></div>
+          <div class="set-row"><span class="k"><b>高德 Key</b><span>可不填；填了地址更准（免费申请，见说明）</span></span><input type="text" id="cfgAmap" placeholder="选填，留空用开源地址库"></div>
           <div class="set-row"><span class="k"><b>仅允许现场拍照</b><span>关闭后可从相册选旧照片</span></span><div class="switch" id="swStrict"></div></div>
         </div>
-        <p class="note">默认只允许现场拍照，是为了让照片真的能当证据用；确实需要补拍再关掉。</p>
+        <p class="note">默认只允许现场拍照，是为了让照片真的能当证据用；确实需要补拍再关掉。地址解析只把经纬度发给地址服务，照片和记录始终留在本机。</p>
       </div>
 
       <div class="set-group">
@@ -441,7 +443,7 @@ main{flex:1;padding:16px 16px 12px}
 var DAY_MS = 86400000;
 var WEEK_CN = ['周日','周一','周二','周三','周四','周五','周六'];
 var CFG_KEY = 'cfg';
-var DEFAULT_CFG = {inTime:'09:00', outTime:'18:00', company:'', name:'', geo:true, watermark:true, strict:true};
+var DEFAULT_CFG = {inTime:'09:00', outTime:'18:00', company:'', name:'', geo:true, watermark:true, strict:true, addr:true, amapKey:''};
 
 function pad2(n){ return (n<10?'0':'') + n; }
 function dateKey(d){ return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
@@ -822,19 +824,103 @@ function fmtCoord(lat, lng){
 }
 function getPlace(){
   return new Promise(function(res){
-    if(!state.cfg.geo || !navigator.geolocation) return res({place:'', coord:''});
+    if(!state.cfg.geo || !navigator.geolocation) return res({coord:'', lat:null, lng:null});
     var done = false;
-    var timer = setTimeout(function(){ if(!done){ done = true; res({place:'', coord:''}); } }, 6000);
+    var timer = setTimeout(function(){ if(!done){ done = true; res({coord:'', lat:null, lng:null}); } }, 6000);
     navigator.geolocation.getCurrentPosition(function(p){
       if(done) return; done = true; clearTimeout(timer);
-      var c = fmtCoord(p.coords.latitude, p.coords.longitude);
-      res({place:c, coord:c});
+      res({coord: fmtCoord(p.coords.latitude, p.coords.longitude), lat:p.coords.latitude, lng:p.coords.longitude});
     }, function(){
       if(done) return; done = true; clearTimeout(timer);
-      res({place:'', coord:''});
+      res({coord:'', lat:null, lng:null});
     }, {timeout:6000, maximumAge:30000, enableHighAccuracy:false});
   });
 }
+
+/* ============ 逆地理编码（经纬度 → 中文地址） ============ */
+var geoCache = {};
+function geoKey(lat, lng){ return lat.toFixed(3) + ',' + lng.toFixed(3); }
+
+function fetchJson(url, ms){
+  return new Promise(function(res, rej){
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var done = false;
+    var timer = setTimeout(function(){
+      if(done) return; done = true;
+      if(ctrl) { try{ ctrl.abort(); }catch(e){} }
+      rej(new Error('timeout'));
+    }, ms || 4000);
+    fetch(url, ctrl ? {mode:'cors', signal:ctrl.signal} : {mode:'cors'}).then(function(r){
+      if(!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function(j){
+      if(done) return; done = true; clearTimeout(timer); res(j);
+    }).catch(function(e){
+      if(done) return; done = true; clearTimeout(timer); rej(e);
+    });
+  });
+}
+
+/* 拼地址，去掉重复层级（如「肇庆市」和「肇庆市端州区」同时出现） */
+function joinAddr(parts){
+  var out = [];
+  parts.forEach(function(s){
+    s = String(s || '').trim();
+    if(!s || s === '[]' || s === 'null') return;
+    var dup = out.some(function(x){ return x === s || x.indexOf(s) >= 0 || s.indexOf(x) >= 0; });
+    if(!dup) out.push(s);
+  });
+  return out.join('');
+}
+
+function amapReverse(lat, lng, key){
+  var url = 'https://restapi.amap.com/v3/geocode/regeo?key=' + encodeURIComponent(key) +
+            '&location=' + lng.toFixed(6) + ',' + lat.toFixed(6) + '&extensions=base&radius=300';
+  return fetchJson(url, 4500).then(function(j){
+    if(!j || j.status !== '1') return '';
+    var rc = j.regeocode || {}, ac = rc.addressComponent || {}, sn = ac.streetNumber || {};
+    var a = joinAddr([ac.city || ac.province, ac.district, ac.township, sn.street, sn.number]);
+    return a || rc.formatted_address || '';
+  });
+}
+
+function photonReverse(lat, lng){
+  var url = 'https://photon.komoot.io/reverse?lat=' + lat.toFixed(4) + '&lon=' + lng.toFixed(4) + '&limit=1';
+  return fetchJson(url, 4500).then(function(j){
+    var f = j && j.features && j.features[0];
+    if(!f) return '';
+    var p = f.properties || {};
+    return joinAddr([p.city || p.county, p.district, p.street || p.name, p.housenumber]);
+  });
+}
+
+/* 解析失败/超时都返回空串，绝不阻塞打卡；失败后 5 分钟内不再重试，避免每次打卡都干等 */
+var geoFailAt = 0;
+function reverseGeo(lat, lng){
+  if(lat == null || lng == null) return Promise.resolve('');
+  if(!state.cfg.geo || !state.cfg.addr) return Promise.resolve('');
+  var k = geoKey(lat, lng);
+  if(Object.prototype.hasOwnProperty.call(geoCache, k)) return Promise.resolve(geoCache[k]);
+  if(Date.now() - geoFailAt < 5 * 60 * 1000) return Promise.resolve('');
+
+  var attempts = [];
+  if(state.cfg.amapKey) attempts.push(function(){ return amapReverse(lat, lng, state.cfg.amapKey); });
+  attempts.push(function(){ return photonReverse(lat, lng); });
+
+  var chain = Promise.resolve('');
+  attempts.forEach(function(fn){
+    chain = chain.then(function(prev){
+      if(prev) return prev;
+      return fn().catch(function(){ return ''; });
+    });
+  });
+  return chain.then(function(a){
+    if(a) geoCache[k] = a;
+    else geoFailAt = Date.now();
+    return a || '';
+  });
+}
+
 
 /* ============ 照片处理 ============ */
 function toBlob(canvas, q){
@@ -858,37 +944,59 @@ function roundRect(ctx, x, y, w, h, r){
   ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
   ctx.closePath();
 }
+function fitText(ctx, text, maxW){
+  if(ctx.measureText(text).width <= maxW) return text;
+  var t = text;
+  while(t.length > 2 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+  return t + '…';
+}
 function drawWatermark(ctx, w, h, meta){
   var fs = Math.max(15, Math.round(Math.min(w, h) * 0.040));
   var pad = Math.round(fs * 0.85);
-  var gradH = Math.round(fs * 5.2);
+  var maxW = w - pad * 2;
+
+  // 地点/地址：优先手填或解析到的地址；没有地址就退回经纬度
+  var geoMain = meta.place || meta.coord || '';
+  var showCoord = !!(meta.coord && meta.place && meta.place !== meta.coord);
+
+  var gradH = Math.round(fs * (showCoord ? 6.9 : 5.6));
   var g = ctx.createLinearGradient(0, h - gradH, 0, h);
   g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(0,0,0,0.66)');
+  g.addColorStop(1, 'rgba(0,0,0,0.70)');
   ctx.fillStyle = g;
   ctx.fillRect(0, h - gradH, w, gradH);
 
   var typeTxt = meta.type === 'in' ? '上班打卡' : '下班打卡';
   ctx.textBaseline = 'alphabetic';
-  var y3 = h - pad;
-  // 第二行：地点
-  if(meta.place){
-    ctx.font = '400 ' + Math.round(fs*0.82) + 'px -apple-system, "PingFang SC", sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.90)';
-    ctx.fillText('地点  ' + meta.place, pad, y3);
+  var yBottom = h - pad;
+
+  // 最底行：坐标（小字），地址在手填/解析成功时叠在它上面
+  if(showCoord){
+    ctx.font = '400 ' + Math.round(fs*0.66) + 'px -apple-system, "PingFang SC", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.fillText(fitText(ctx, '坐标  ' + meta.coord, maxW), pad, yBottom);
   }
-  // 第三行：公司 / 姓名
+  if(geoMain){
+    var yPlace = showCoord ? yBottom - Math.round(fs*1.32) : yBottom;
+    ctx.font = '400 ' + Math.round(fs*0.82) + 'px -apple-system, "PingFang SC", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillText(fitText(ctx, '地点  ' + geoMain, maxW), pad, yPlace);
+  }
+
+  var yOrg = yBottom - Math.round(fs * (showCoord ? 2.55 : 1.35));
+
   var orgLine = [meta.company, meta.name].filter(Boolean).join(' · ');
   if(orgLine){
     ctx.font = '400 ' + Math.round(fs*0.78) + 'px -apple-system, "PingFang SC", sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.78)';
-    ctx.fillText(orgLine, pad, y3 - Math.round(fs*1.35));
+    ctx.fillStyle = 'rgba(255,255,255,0.80)';
+    ctx.fillText(fitText(ctx, orgLine, maxW), pad, yOrg);
   }
-  // 第一行：类型 + 时间（带底色块）
+
+  // 类型 + 时间（带底色块）
   var line1 = typeTxt + '  ' + meta.stamp;
   ctx.font = '600 ' + Math.round(fs*1.06) + 'px -apple-system, "PingFang SC", sans-serif';
   var tw = ctx.measureText(line1).width;
-  var bx = pad - Math.round(fs*0.28), by = y3 - Math.round(fs*3.1) - Math.round(fs*0.9);
+  var bx = pad - Math.round(fs*0.28), by = yOrg - Math.round(fs*2.65) - Math.round(fs*0.9);
   ctx.fillStyle = meta.type === 'in' ? 'rgba(23,105,79,0.92)' : 'rgba(201,96,58,0.92)';
   roundRect(ctx, bx, by, tw + Math.round(fs*0.6), Math.round(fs*1.55), Math.round(fs*0.35));
   ctx.fill();
@@ -980,18 +1088,35 @@ function openPhotoConfirm(){
     '<button class="btn primary" id="btnSavePunch">保存打卡</button></div>'
   );
 
-  photoState = {stamp:stamp, place:'', out:null, url:''};
+  photoState = {stamp:stamp, place:'', coord:'', out:null, url:''};
   renderShot('');
 
+  var typed = false;
+  var firstInput = document.getElementById('fPlace');
+  if(firstInput) firstInput.addEventListener('input', function(){ typed = true; });
+
   getPlace().then(function(gp){
+    if(!photoState) return;
+    photoState.coord = gp.coord || '';
     var placeInput = document.getElementById('fPlace');
-    if(!placeInput) return;
-    if(gp.place){
-      placeInput.value = gp.place;
-      if(photoState && photoState.place !== gp.place) renderShot(gp.place);
-    } else {
-      placeInput.placeholder = '未获取到定位，可手填';
+    if(!gp.coord){
+      if(placeInput) placeInput.placeholder = '未获取到定位，可手填';
+      return;
     }
+    // 先把经纬度烙上，别让用户等地址
+    renderShot(photoState.place);
+    return reverseGeo(gp.lat, gp.lng).then(function(addr){
+      if(!photoState) return;
+      var el = document.getElementById('fPlace');
+      if(!addr){
+        if(el) el.placeholder = '未解析到地址，可手填（坐标已记录）';
+        return;
+      }
+      if(el && !typed) el.value = addr;
+      var shown = (el && el.value.trim()) || addr;
+      photoState.place = shown;
+      return renderShot(shown);
+    });
   });
 
   var seg = document.getElementById('segType');
@@ -1013,15 +1138,19 @@ function openPhotoConfirm(){
 }
 
 /* 重新生成带水印的预览（地点/类型变了就重画，保证照片和记录一致） */
+var renderSeq = 0;
 function renderShot(place){
   if(!pending.file || !photoState) return Promise.resolve(null);
+  var seq = ++renderSeq;
   var meta = {
     type: pending.type, stamp: photoState.stamp, place: place || '',
+    coord: photoState.coord || '',
     company: state.cfg.company, name: state.cfg.name, watermark: state.cfg.watermark
   };
   var ss = document.getElementById('shotState');
   if(ss) ss.textContent = '正在生成水印…';
   return processPhoto(pending.file, meta).then(function(out){
+    if(seq !== renderSeq) return out;   // 已有更新的一次重画，丢弃这次结果
     if(photoState.url) URL.revokeObjectURL(photoState.url);
     photoState.out = out;
     photoState.place = place || '';
@@ -1055,7 +1184,7 @@ function savePunch(){
     var rec = {
       id: uid(), type: type, ts: ts,
       dateKey: dateKey(new Date(ts)),
-      place: place, note: note,
+      place: place, coord: (photoState.coord || ''), note: note,
       company: state.cfg.company || '', name: state.cfg.name || '',
       photo: out.photo, thumb: out.thumb,
       w: out.w, h: out.h,
@@ -1087,6 +1216,7 @@ function openRecordDetail(id){
     ['时间', hms(rec.ts)],
     ['日期', rec.dateKey],
     ['地点', rec.place || '未记录'],
+    ['坐标', rec.coord || (rec.place && /°[NS]/.test(rec.place) ? rec.place : '未记录')],
     ['备注', rec.note || '—'],
     ['方式', rec.manual ? '手动补卡' : '现场拍照']
   ];
@@ -1163,7 +1293,7 @@ function buildCsv(recs, cfg){
     var s = daySummary(d, cfg);
     var status = s.both ? '齐全' : (s.inRec ? '缺下班卡' : '仅下班卡');
     if(s.manual) status = '补卡 · ' + status;
-    var places = [s.inRec && s.inRec.place, s.outRec && s.outRec.place].filter(Boolean);
+    var places = [s.inRec && (s.inRec.place || s.inRec.coord), s.outRec && (s.outRec.place || s.outRec.coord)].filter(Boolean);
     var notes = [s.inRec && s.inRec.note, s.outRec && s.outRec.note].filter(Boolean);
     var photos = [s.inRec, s.outRec].filter(function(r){ return r && r.photo; }).map(photoName).join(' | ');
     lines.push([
@@ -1523,6 +1653,8 @@ function renderSettingsForm(){
   document.getElementById('swWatermark').classList.toggle('on', !!state.cfg.watermark);
   document.getElementById('swGeo').classList.toggle('on', !!state.cfg.geo);
   document.getElementById('swStrict').classList.toggle('on', !!state.cfg.strict);
+  document.getElementById('swAddr').classList.toggle('on', !!state.cfg.addr);
+  document.getElementById('cfgAmap').value = state.cfg.amapKey || '';
 }
 
 function bindSetting(elId, key, isSwitch){
@@ -1656,6 +1788,8 @@ function bindEvents(){
   bindSetting('swWatermark', 'watermark', true);
   bindSetting('swGeo', 'geo', true);
   bindSetting('swStrict', 'strict', true);
+  bindSetting('swAddr', 'addr', true);
+  bindSetting('cfgAmap', 'amapKey', false);
   window.addEventListener('hashchange', route);
 }
 
@@ -1695,6 +1829,8 @@ window.__dk = {
   saveBackupAuto: saveBackupAuto,
   mailDraft: mailDraft,
   autoUrl: autoUrl,
+  reverseGeo: reverseGeo,
+  drawWatermark: drawWatermark,
   state: state
 };
 

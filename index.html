@@ -888,10 +888,27 @@ function photonReverse(lat, lng){
   var url = 'https://photon.komoot.io/reverse?lat=' + lat.toFixed(4) + '&lon=' + lng.toFixed(4) + '&limit=1';
   return fetchJson(url, 4500).then(function(j){
     var f = j && j.features && j.features[0];
-    if(!f) return '';
+    if(!f) return { full: '', street: '' };
     var p = f.properties || {};
-    return joinAddr([p.city || p.county, p.district, p.street || p.name, p.housenumber]);
+    var street = joinAddr([p.street || p.name, p.housenumber]);
+    return {
+      full: joinAddr([p.city || p.county, p.district, street]),
+      street: /(路|大道|道|街|巷|号|线)/.test(street) ? street : ''
+    };
   });
+}
+
+/* 有道路名才算「更具体」 */
+function hasRoad(s){ return /(路|大道|道|街|巷|号|线)/.test(s || ''); }
+
+/* 高德的省市区县层级更规范，开源库的路名更细：能拼就拼，拼不上取更具体的那个 */
+function mergeAddr(amap, phot){
+  var full = (phot && phot.full) || '';
+  var street = (phot && phot.street) || '';
+  if(!amap) return full;
+  if(hasRoad(amap) || !street) return amap;
+  if(amap.indexOf(street) >= 0) return amap;
+  return amap + street;
 }
 
 /* 解析失败/超时都返回空串，绝不阻塞打卡；失败后 5 分钟内不再重试，避免每次打卡都干等 */
@@ -903,21 +920,16 @@ function reverseGeo(lat, lng){
   if(Object.prototype.hasOwnProperty.call(geoCache, k)) return Promise.resolve(geoCache[k]);
   if(Date.now() - geoFailAt < 5 * 60 * 1000) return Promise.resolve('');
 
-  var attempts = [];
-  if(state.cfg.amapKey) attempts.push(function(){ return amapReverse(lat, lng, state.cfg.amapKey); });
-  attempts.push(function(){ return photonReverse(lat, lng); });
-
-  var chain = Promise.resolve('');
-  attempts.forEach(function(fn){
-    chain = chain.then(function(prev){
-      if(prev) return prev;
-      return fn().catch(function(){ return ''; });
-    });
-  });
-  return chain.then(function(a){
-    if(a) geoCache[k] = a;
+  /* 两路并发，谁快谁先用，最后合并择优；任意一路失败都不影响另一路 */
+  var pAmap = state.cfg.amapKey
+    ? amapReverse(lat, lng, state.cfg.amapKey).catch(function(){ return ''; })
+    : Promise.resolve('');
+  var pPhot = photonReverse(lat, lng).catch(function(){ return { full: '', street: '' }; });
+  return Promise.all([pAmap, pPhot]).then(function(r){
+    var out = mergeAddr(r[0] || '', r[1] || {});
+    if(out) geoCache[k] = out;
     else geoFailAt = Date.now();
-    return a || '';
+    return out;
   });
 }
 

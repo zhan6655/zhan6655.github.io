@@ -17,8 +17,9 @@
   --line:#e3e5e0; --primary:#17694f; --primary-soft:#e6f0ec; --accent:#c9603a; --accent-soft:#fbece5;
   --warn:#b4761c; --radius:16px; --shadow:0 1px 2px rgba(23,32,28,.06),0 8px 24px rgba(23,32,28,.05);
 }
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;touch-action:manipulation}
+html,body{margin:0;padding:0;touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%;user-select:none;-webkit-user-select:none}
+input,textarea{user-select:text;-webkit-user-select:text}
 body{
   background:var(--bg); color:var(--ink);
   font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
@@ -26,6 +27,9 @@ body{
   overscroll-behavior-y:contain;
 }
 button,input,textarea,select{font-family:inherit;font-size:inherit;color:inherit}
+/* 输入框字号固定 16px：iOS 里小于 16px 的输入框一聚焦就会把整页放大 */
+input,textarea,select{font-size:16px;touch-action:manipulation}
+button,.punch,.rec,.seg button,.tabbar button,.btn,.list-simple,.detail-row{user-select:none;-webkit-user-select:none;touch-action:manipulation}
 button{border:0;background:none;padding:0;cursor:pointer}
 .app{min-height:100vh;max-width:520px;margin:0 auto;display:flex;flex-direction:column;background:var(--bg)}
 .top{
@@ -1627,7 +1631,7 @@ function openAutoSheet(){
     block('mail', '弹一封邮件草稿', '收件人可在下面先填好，正文含本月汇总 + 明细') +
     '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin:14px 0">' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">邮件草稿的收件人（可留空，留空则在邮件里手填）</div>' +
-      '<input id="autoEmail" type="email" inputmode="email" placeholder="例如 me@qq.com" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:14px;background:#fbfbf9">' +
+      '<input id="autoEmail" type="email" inputmode="email" placeholder="例如 me@qq.com" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:16px;background:#fbfbf9">' +
     '</div>' +
     '<div class="section-title" style="margin:0 0 8px"><h2>在「快捷指令」里配一次</h2></div>' +
     '<ol class="steps">' +
@@ -1847,6 +1851,24 @@ window.__dk = {
 };
 
 init();
+
+/* iOS 上防止页面被放大：双击/双指/长按都不改动缩放比例，页面大小始终锁在「适合屏幕」 */
+(function lockZoom(){
+  if(typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  var stop = function(e){ if(e && e.cancelable !== false) e.preventDefault(); };
+  document.addEventListener('gesturestart', stop, { passive: false });
+  document.addEventListener('gesturechange', stop, { passive: false });
+  document.addEventListener('dblclick', stop, { passive: false });
+  document.addEventListener('touchstart', function(e){
+    if(e && e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+  /* 若已被放大（例如之前误操作），转屏时把比例复位 */
+  var resetZoom = function(){
+    var vp = document.querySelector('meta[name=viewport]');
+    if(vp) vp.setAttribute('content', 'width=device-width, initial-scale=1');
+  };
+  if(typeof window !== 'undefined' && window.addEventListener){ window.addEventListener('orientationchange', resetZoom); }
+})();
 </script>
 </body>
 </html>

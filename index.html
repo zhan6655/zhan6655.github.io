@@ -437,6 +437,7 @@ select{
           <button class="set-row" id="rowCsv"><span class="k"><b>导出打卡 CSV</b><span>Excel 可直接打开，按月份选择</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
           <button class="set-row" id="rowZip"><span class="k"><b>导出照片包（ZIP）</b><span>照片 + CSV 一起打包</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
           <button class="set-row" id="rowBackup"><span class="k"><b>完整备份</b><span>全部照片 + 数据，建议每月一次</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="set-row" id="rowImport"><span class="k"><b>导入备份（合并）</b><span>选一个备份 zip，把另一边的记录并进来，重复的自动跳过</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
           <button class="set-row" id="rowAuto"><span class="k"><b>定时自动存档</b><span>到点自动存到「文件」App，或弹一封邮件草稿</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
         </div>
         <p class="note" id="storageNote">正在统计占用…</p>
@@ -488,6 +489,7 @@ select{
 <div class="toast" id="toast" hidden></div>
 <input type="file" id="fileCam" accept="image/*" capture="environment" style="display:none">
 <input type="file" id="fileAlbum" accept="image/*" style="display:none">
+<input type="file" id="fileImport" accept=".zip,application/zip" style="display:none">
 
 <script>
 /* ============ 基础工具 ============ */
@@ -1748,6 +1750,116 @@ function blobToU8(blob){
   });
 }
 
+/* ============ 备份导入（合并）：主屏 App 与 Safari 是两套存储，用它把另一边搬过来 ============ */
+function unzipStore(u8){
+  var files = {}, i = 0, dec = new TextDecoder();
+  while(i + 30 <= u8.length){
+    var sig = (u8[i] | (u8[i+1] << 8) | (u8[i+2] << 16) | (u8[i+3] << 24)) >>> 0;
+    if(sig !== 0x04034b50) break;
+    var method = u8[i+8] | (u8[i+9] << 8);
+    var csize = (u8[i+18] | (u8[i+19] << 8) | (u8[i+20] << 16) | (u8[i+21] << 24)) >>> 0;
+    var nlen = u8[i+26] | (u8[i+27] << 8);
+    var elen = u8[i+28] | (u8[i+29] << 8);
+    var name = dec.decode(u8.subarray(i + 30, i + 30 + nlen));
+    var start = i + 30 + nlen + elen;
+    if(method !== 0) throw new Error('「' + name + '」是压缩格式，只能导入本 App 导出的备份');
+    files[name] = u8.subarray(start, start + csize);
+    i = start + csize;
+  }
+  return files;
+}
+
+function makeThumb(blob){
+  return new Promise(function(res){
+    var url = URL.createObjectURL(blob);
+    var img = new Image();
+    img.onload = function(){
+      try{
+        var scale = Math.min(1, 300 / Math.max(img.naturalWidth, img.naturalHeight));
+        var c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        toBlob(c, 0.6).then(function(b){ res(b); }).catch(function(){ res(null); });
+      }catch(e){ res(null); }
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); res(null); };
+    img.src = url;
+  });
+}
+
+function recUniqKey(r){ return String(r.dateKey) + '|' + String(r.slot || r.type || '') + '|' + String(r.ts); }
+
+function importBackupZip(file){
+  return blobToU8(file).then(function(u8){
+    var files = unzipStore(u8);
+    var metaU8 = files['打卡数据.json'];
+    if(!metaU8){
+      var anyJson = Object.keys(files).filter(function(n){ return /(^|\/)打卡数据\.json$/i.test(n); })[0];
+      if(anyJson) metaU8 = files[anyJson];
+    }
+    if(!metaU8) throw new Error('这个压缩包里没有「打卡数据.json」，不是本 App 的备份');
+    var data = JSON.parse(new TextDecoder().decode(metaU8));
+    var list = (data && data.records) || [];
+    if(!list.length) throw new Error('备份里没有打卡记录');
+
+    var added = 0, dup = 0, noPhoto = 0;
+    /* 去重要看数据库里的真实数据，不能只看内存缓存 */
+    var chain = allRecords().then(function(existing){
+      var existIds = {}, existKeys = {};
+      existing.forEach(function(r){ existIds[r.id] = 1; existKeys[recUniqKey(r)] = 1; });
+      var inner = Promise.resolve();
+      list.forEach(function(m){
+        inner = inner.then(function(){
+          var rec = normRec({
+            id: m.id || ('imp' + Date.now() + Math.random().toString(36).slice(2, 7)),
+            slot: m.slot, slotName: m.slotName, kind: m.kind, type: m.type,
+            ts: m.ts, dateKey: m.dateKey, place: m.place || '', coord: m.coord || '',
+            note: m.note || '', company: m.company || '', name: m.name || '',
+            manual: !!m.manual, createdAt: m.createdAt || m.ts,
+            w: m.w || 0, h: m.h || 0
+          });
+          if(existIds[rec.id] || existKeys[recUniqKey(rec)]){ dup++; return; }
+          var bytes = m.hasPhoto ? files[photoName(rec)] : null;
+          /* 班次改过名的备份，照片名对不上时按「日期 + 时间」兜底找 */
+          if(m.hasPhoto && !bytes){
+            var tag = String(rec.dateKey) + '_' + hms(rec.ts).replace(/:/g, '');
+            var hit = Object.keys(files).filter(function(n){
+              return /(^|\/)打卡照片\//.test(n) && n.indexOf(tag) >= 0;
+            })[0];
+            if(hit) bytes = files[hit];
+          }
+          if(m.hasPhoto && !bytes) noPhoto++;
+          var blob = bytes ? new Blob([bytes], {type:'image/jpeg'}) : null;
+          return (blob ? makeThumb(blob) : Promise.resolve(null)).then(function(thumb){
+            rec.photo = blob; rec.thumb = thumb;
+            existIds[rec.id] = 1; existKeys[recUniqKey(rec)] = 1;
+            added++;
+            return putRecord(rec);
+          });
+        });
+      });
+      return inner;
+    });
+
+    return chain.then(function(){
+      /* 合并休假登记（另一边标过的休假不要丢），其余设置保持本机不动 */
+      if(data.cfg && data.cfg.dayOff){
+        return getCfg().then(function(cur){
+          var merged = cur.dayOff || {};
+          Object.keys(data.cfg.dayOff).forEach(function(k){
+            if(!(k in merged)) merged[k] = data.cfg.dayOff[k];
+          });
+          cur.dayOff = merged;
+          return setCfg(cur);
+        }).then(function(){ return {added: added, dup: dup, noPhoto: noPhoto, total: list.length}; });
+      }
+      return {added: added, dup: dup, noPhoto: noPhoto, total: list.length};
+    });
+  });
+}
+
 function download(blob, filename){
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
@@ -1815,15 +1927,17 @@ function makeBackupZip(recs){
   return Promise.all(jobs).then(function(photoFiles){
     var enc = new TextEncoder();
     var meta = recs.map(function(r){
-      return {id:r.id, type:r.type, ts:r.ts, dateKey:r.dateKey, place:r.place, note:r.note,
-              company:r.company, name:r.name, manual:r.manual, hasPhoto:!!r.photo};
+      return {id:r.id, slot:r.slot, slotName:r.slotName, kind:r.kind, type:r.type, ts:r.ts,
+              dateKey:r.dateKey, place:r.place, coord:r.coord, note:r.note,
+              company:r.company, name:r.name, manual:r.manual, createdAt:r.createdAt,
+              w:r.w || 0, h:r.h || 0, hasPhoto:!!r.photo};
     });
     var files = [
       {name:'打卡记录.csv', data: enc.encode(buildCsv(recs, state.cfg))},
       {name:'打卡数据.json', data: enc.encode(JSON.stringify({exportedAt:new Date().toISOString(), cfg:state.cfg, records:meta}, null, 2))},
       {name:'说明.txt', data: enc.encode('上下班打卡 · 完整备份\r\n记录 ' + recs.length + ' 条，照片 ' + photoFiles.length + ' 张。\r\n' +
         '照片在本压缩包的「打卡照片」目录，文件名与 CSV 对得上。\r\n' +
-        '这份备份用于长期留存和换机时人工转运；本网页版暂不支持一键导入还原。\r\n')}
+        '这份备份可在 App「设置 → 导入备份（合并）」里导回去；用于换机转运，也用于把 Safari 里的记录并入主屏幕 App。\r\n')}
     ].concat(photoFiles);
     var stamp = new Date();
     var name = '打卡备份_' + stamp.getFullYear() + pad2(stamp.getMonth()+1) + pad2(stamp.getDate()) + '.zip';
@@ -2144,6 +2258,21 @@ function bindEvents(){
   document.getElementById('rowCsv').onclick = function(){ exportCsv('all'); };
   document.getElementById('rowZip').onclick = function(){ exportZip('all'); };
   document.getElementById('rowBackup').onclick = exportBackup;
+  document.getElementById('rowImport').onclick = function(){ document.getElementById('fileImport').click(); };
+  document.getElementById('fileImport').onchange = function(e){
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if(!f) return;
+    toast('正在导入备份…');
+    importBackupZip(f).then(function(st){
+      return Promise.resolve(renderAll()).then(function(){
+        toast('导入完成：新增 ' + st.added + ' 条，跳过重复 ' + st.dup + ' 条' +
+              (st.noPhoto ? '，缺照片 ' + st.noPhoto + ' 条' : ''));
+      });
+    }).catch(function(err){
+      toast('导入失败：' + (err && err.message ? err.message : '请确认选的是「完整备份」导出的 zip'));
+    });
+  };
   document.getElementById('rowAuto').onclick = openAutoSheet;
   document.getElementById('btnExportCsv2').onclick = function(){ exportCsv('month'); };
   ['am_in','am_out','pm_in','pm_out','ot_in','ot_out'].forEach(function(id){
@@ -2230,6 +2359,12 @@ window.__dk = {
   autoUrl: autoUrl,
   reverseGeo: reverseGeo,
   drawWatermark: drawWatermark,
+  importBackupZip: importBackupZip,
+  unzipStore: unzipStore,
+  makeThumb: makeThumb,
+  makeZip: makeZip,
+  makeBackupZip: makeBackupZip,
+  photoName: photoName,
   state: state
 };
 

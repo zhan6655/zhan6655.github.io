@@ -1,0 +1,28 @@
+name: deploy-checkin-site-v2
+on:
+  push:
+    paths-ignore:
+      - 'index.html'
+      - 'icon.png'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: deploy-site-v2
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch page
+        run: curl -fsSL "https://aka.doubaocdn.com/s/zTcx2rKw9W" -o index.html
+      - name: Verify hash
+        run: test "$(sha256sum index.html | cut -d' ' -f1)" = "e18d9c360c6cda10998f8a72af220b46fc00b0fe702fa88690e8c3e75401fb06"
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "deploy: checkin app v2 auto archive" || echo "no changes"
+          git push

@@ -92,6 +92,24 @@ main{flex:1;padding:16px 16px 12px}
   position:absolute;top:-8px;right:16px;background:var(--accent);color:#fff;font-size:11px;
   padding:2px 8px;border-radius:99px;letter-spacing:.5px;font-weight:600;
 }
+/* 一天多个打卡点：今日班次网格 */
+.slot-grid{margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.slot{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:11px 13px;border-radius:13px;background:var(--card);border:1px solid var(--line);
+  text-align:left;transition:transform .12s ease;
+}
+.slot:active{transform:scale(.985)}
+.slot .s-l{min-width:0}
+.slot .s-name{display:block;font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot .s-plan{display:block;font-size:11px;color:var(--muted);margin-top:1px;font-variant-numeric:tabular-nums}
+.slot .s-right{font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--primary)}
+.slot .s-right.none{color:var(--line-strong, #c8ccc7);font-weight:550}
+.slot.done{background:var(--primary-soft);border-color:rgba(23,105,79,.25)}
+.slot.done .s-right{color:var(--primary)}
+.slot.done .s-plan{color:var(--primary);opacity:.75}
+.slot.next{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.slot.opt .s-name{color:var(--ink-2)}
 .hint-bar{
   margin-top:14px;display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:12px;
   background:var(--card);border:1px solid var(--line);font-size:12.5px;color:var(--ink-2);line-height:1.45;
@@ -156,11 +174,24 @@ main{flex:1;padding:16px 16px 12px}
 .cal-cell.blank{background:transparent}
 .cal-cell.has{background:var(--primary-soft);color:var(--primary);font-weight:650}
 .cal-cell.has.partial{background:#fdf1e9;color:var(--accent)}
+.cal-cell.miss{box-shadow:inset 0 0 0 1.2px #e8b48d}
+.cal-cell.off{background:#f1f2ee;color:var(--muted)}
 .cal-cell .flag{position:absolute;bottom:3px;display:flex;gap:2px}
 .cal-cell .flag i{width:4px;height:4px;border-radius:50%;background:var(--accent);display:block}
+.cal-cell .mini{position:absolute;top:2px;right:4px;font-size:9px;line-height:1;opacity:.7}
 .legend{display:flex;gap:14px;margin-top:10px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
 .legend span{display:flex;align-items:center;gap:5px}
 .legend .sw{width:9px;height:9px;border-radius:3px}
+.week-picker{display:flex;gap:6px}
+.week-picker button{
+  flex:1;height:34px;border-radius:9px;background:#f2f3ef;border:1px solid var(--line);
+  font-size:13px;font-weight:600;color:var(--ink-2);
+}
+.week-picker button.on{background:var(--primary);color:#fff;border-color:var(--primary)}
+select{
+  width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);
+  background:var(--card);font-size:16px;color:var(--ink);font-family:inherit;
+}
 
 /* ---- 设置 ---- */
 .set-group{margin-bottom:14px}
@@ -281,31 +312,24 @@ main{flex:1;padding:16px 16px 12px}
         <div class="clock-time" id="clockTime">--:--<small>--</small></div>
         <div class="clock-date" id="clockDate">加载中…</div>
         <div class="today-row">
-          <div class="today-cell" id="cellIn"><b>—</b><span>上班</span></div>
-          <div class="today-cell" id="cellOut"><b>—</b><span>下班</span></div>
-          <div class="today-cell" id="cellDur"><b>—</b><span>已工作</span></div>
+          <div class="today-cell" id="cellIn"><b>0/4</b><span>今日打卡</span></div>
+          <div class="today-cell" id="cellOut"><b>—</b><span>当前状态</span></div>
+          <div class="today-cell" id="cellDur"><b>—</b><span>今日工时</span></div>
         </div>
       </div>
 
       <div class="actions" id="punchActions">
-        <button class="punch primary" data-type="in" id="btnIn">
-          <span class="badge-suggest" id="badgeIn" hidden>建议</span>
+        <button class="punch primary" data-slot="" id="btnPunchMain">
+          <span class="badge-suggest" id="badgeMain" hidden>现在该打</span>
           <span class="p-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 4h5v16h-5"/><path d="M4 12h10"/><path d="M11 8l4 4-4 4"/>
             </svg>
           </span>
-          <span class="p-txt"><b>上班打卡</b><span>拍照并记录到岗时间</span></span>
+          <span class="p-txt"><b id="mainName">打卡</b><span id="mainHint">点这里拍照打卡</span></span>
         </button>
-        <button class="punch ghost accent" data-type="out" id="btnOut">
-          <span class="badge-suggest" id="badgeOut" hidden>建议</span>
-          <span class="p-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 4h5v16H5"/><path d="M20 12H9"/><path d="M13 8l-4 4 4 4"/>
-            </svg>
-          </span>
-          <span class="p-txt"><b>下班打卡</b><span>拍照并记录离岗时间</span></span>
-        </button>
+        <div class="slot-grid" id="slotGrid"></div>
+        <button class="mini-btn" id="btnSlotPick" style="align-self:flex-start;background:var(--card);border:1px solid var(--line);color:var(--ink-2);margin-top:2px">打其他班次 / 补打漏掉的卡</button>
       </div>
 
       <div class="hint-bar" id="hintBar">
@@ -347,14 +371,17 @@ main{flex:1;padding:16px 16px 12px}
         <div class="stat accent"><div class="s-label">迟到</div><div class="s-val" id="stLate">—<span>次</span></div></div>
         <div class="stat accent"><div class="s-label">早退</div><div class="s-val" id="stEarly">—<span>次</span></div></div>
       </div>
+      <p class="note" id="statExtra" style="margin:8px 4px 0">正在计算…</p>
       <div class="card cal-card">
         <div class="cal-week"><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div><div>日</div></div>
         <div class="cal-grid" id="calGrid"></div>
         <div class="legend">
-          <span><i class="sw" style="background:var(--primary-soft)"></i>上下班齐全</span>
-          <span><i class="sw" style="background:#fdf1e9"></i>缺卡/异常</span>
+          <span><i class="sw" style="background:var(--primary-soft)"></i>已打卡</span>
+          <span><i class="sw" style="background:#fdf1e9"></i>缺卡</span>
+          <span><i class="sw" style="background:#f1f2ee"></i>休假</span>
           <span><i class="sw" style="background:#f7f7f4"></i>无记录</span>
         </div>
+        <p class="note">点某一天可以标「休假」或「补班」，默认按设置里的工作日走。</p>
       </div>
       <div class="section-title"><h2>异常明细</h2></div>
       <div class="card" id="anomalyList"></div>
@@ -363,10 +390,30 @@ main{flex:1;padding:16px 16px 12px}
     <!-- ===== 视图：设置 ===== -->
     <section class="view" id="view-settings" hidden>
       <div class="set-group">
-        <div class="g-title">工作时间</div>
+        <div class="g-title">打卡班次</div>
+        <div class="set-card" id="slotTimeList">
+          <div class="set-row"><span class="k"><b>上午上班</b><span>晚于这个时间打，记迟到</span></span><input type="time" id="slotT_am_in"></div>
+          <div class="set-row"><span class="k"><b>上午下班</b><span>早于这个时间打，记早退</span></span><input type="time" id="slotT_am_out"></div>
+          <div class="set-row"><span class="k"><b>下午上班</b><span>晚于这个时间打，记迟到</span></span><input type="time" id="slotT_pm_in"></div>
+          <div class="set-row"><span class="k"><b>下午下班</b><span>早于这个时间打，记早退</span></span><input type="time" id="slotT_pm_out"></div>
+          <div class="set-row"><span class="k"><b>加班上班（可选）</b><span>不计入缺卡，只单独统计加班工时</span></span><input type="time" id="slotT_ot_in"></div>
+          <div class="set-row"><span class="k"><b>加班下班（可选）</b><span>同上，加班段是否显示看下面开关</span></span><input type="time" id="slotT_ot_out"></div>
+          <div class="set-row"><span class="k"><b>显示加班两段</b><span>平时不加班的可以关掉，首页就只留四段</span></span><div class="switch" id="swOt"></div></div>
+        </div>
+        <p class="note">时间随时可以改，改完只影响以后判迟到早退，已有记录不会变。</p>
+      </div>
+
+      <div class="set-group">
+        <div class="g-title">默认工作日</div>
         <div class="set-card">
-          <div class="set-row"><span class="k"><b>上班时间</b><span>超过这个时间打卡记为迟到</span></span><input type="time" id="cfgInTime"></div>
-          <div class="set-row"><span class="k"><b>下班时间</b><span>早于这个时间打卡记为早退</span></span><input type="time" id="cfgOutTime"></div>
+          <div class="set-row" style="display:block">
+            <span class="k" style="display:block;margin-bottom:8px"><b>哪几天上班</b><span>某天不来或周末补班，到「统计」页点日历单独改</span></span>
+            <div class="week-picker" id="weekPicker">
+              <button data-w="1">一</button><button data-w="2">二</button><button data-w="3">三</button>
+              <button data-w="4">四</button><button data-w="5">五</button><button data-w="6">六</button>
+              <button data-w="0">日</button>
+            </div>
+          </div>
           <div class="set-row"><span class="k"><b>公司 / 单位</b><span>显示在打卡照片水印上</span></span><input type="text" id="cfgCompany" placeholder="可不填"></div>
           <div class="set-row"><span class="k"><b>姓名</b><span>显示在打卡照片水印上</span></span><input type="text" id="cfgName" placeholder="可不填"></div>
         </div>
@@ -447,7 +494,19 @@ main{flex:1;padding:16px 16px 12px}
 var DAY_MS = 86400000;
 var WEEK_CN = ['周日','周一','周二','周三','周四','周五','周六'];
 var CFG_KEY = 'cfg';
-var DEFAULT_CFG = {inTime:'09:00', outTime:'18:00', company:'', name:'', geo:true, watermark:true, strict:true, addr:true, amapKey:''};
+/* 一天可以有很多个打卡点：默认「上午上班/下班 → 下午上班/下班 → 加班上班/下班」 */
+var DEFAULT_SLOTS = [
+  {id:'am_in',  name:'上午上班', time:'08:30', kind:'in'},
+  {id:'am_out', name:'上午下班', time:'12:30', kind:'out'},
+  {id:'pm_in',  name:'下午上班', time:'14:00', kind:'in'},
+  {id:'pm_out', name:'下午下班', time:'18:00', kind:'out'},
+  {id:'ot_in',  name:'加班上班', time:'18:30', kind:'in',  optional:true},
+  {id:'ot_out', name:'加班下班', time:'21:30', kind:'out', optional:true}
+];
+var DEFAULT_CFG = {
+  slots: DEFAULT_SLOTS, otOn:true, workWeek:[1,2,3,4,5], dayOff:{},
+  company:'', name:'', geo:true, watermark:true, strict:true, addr:true, amapKey:''
+};
 
 function pad2(n){ return (n<10?'0':'') + n; }
 function dateKey(d){ return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
@@ -509,17 +568,40 @@ function tx(store, mode){
 function reqP(req){
   return new Promise(function(res, rej){ req.onsuccess = function(){ res(req.result); }; req.onerror = function(){ rej(req.error); }; });
 }
+function normCfg(raw){
+  var c = Object.assign({}, DEFAULT_CFG, raw || {});
+  delete c.k;
+  if(!Array.isArray(c.slots) || !c.slots.length){
+    /* 老版本只有 inTime / outTime，迁移成四段制 */
+    c.slots = DEFAULT_SLOTS.map(function(s){ return Object.assign({}, s); });
+    if(raw && raw.inTime) c.slots[0].time = raw.inTime;
+    if(raw && raw.outTime) c.slots[3].time = raw.outTime;
+  } else {
+    c.slots = c.slots.map(function(s){
+      var d = DEFAULT_SLOTS.filter(function(x){ return x.id === s.id; })[0] || {kind:'in', name:'上班', time:'09:00'};
+      return Object.assign({}, d, s);
+    });
+    /* 缺哪一段就补哪一段，避免用户删配置后整段消失 */
+    DEFAULT_SLOTS.forEach(function(d){
+      if(!c.slots.some(function(s){ return s.id === d.id; })) c.slots.push(Object.assign({}, d));
+    });
+  }
+  if(!Array.isArray(c.workWeek)) c.workWeek = [1,2,3,4,5];
+  if(!c.dayOff || typeof c.dayOff !== 'object') c.dayOff = {};
+  delete c.inTime; delete c.outTime;
+  return c;
+}
 function getCfg(){
   return tx('settings','readonly').then(function(s){ return reqP(s.get(CFG_KEY)); }).then(function(v){
-    var cfg = Object.assign({}, DEFAULT_CFG, v || {});
-    delete cfg.k;
-    return cfg;
+    return normCfg(v);
   });
 }
 function setCfg(patch){
   return getCfg().then(function(cfg){
-    var next = Object.assign({}, cfg, patch);
-    return tx('settings','readwrite').then(function(s){ return reqP(s.put(Object.assign({k:CFG_KEY}, next))); }).then(function(){ return next; });
+    var next = normCfg(Object.assign({}, cfg, patch));
+    return tx('settings','readwrite').then(function(s){
+      return reqP(s.put(Object.assign({k:CFG_KEY}, next)));
+    }).then(function(){ return next; });
   });
 }
 function putRecord(rec){
@@ -528,9 +610,20 @@ function putRecord(rec){
 function delRecord(id){
   return tx('records','readwrite').then(function(s){ return reqP(s.delete(id)); });
 }
+function normRec(r){
+  if(!r) return r;
+  if(!r.slot){
+    r.slot = (r.type === 'in') ? 'am_in' : 'pm_out';   /* 老记录只有上班/下班，落到上午上班/下午下班 */
+  }
+  var d = DEFAULT_SLOTS.filter(function(x){ return x.id === r.slot; })[0];
+  if(!r.slotName) r.slotName = d ? d.name : (r.type === 'in' ? '上班' : '下班');
+  if(!r.kind) r.kind = r.type || (d ? d.kind : 'in');
+  if(!r.type) r.type = r.kind;
+  return r;
+}
 function allRecords(){
   return tx('records','readonly').then(function(s){ return reqP(s.getAll()); }).then(function(list){
-    return (list || []).sort(function(a,b){ return a.ts - b.ts; });
+    return (list || []).map(normRec).sort(function(a,b){ return a.ts - b.ts; });
   });
 }
 function recordsOfMonth(ym){
@@ -545,48 +638,115 @@ function groupDays(recs){
   var map = {}, days = [];
   recs.forEach(function(r){
     var k = r.dateKey;
-    if(!map[k]){ map[k] = {key:k, ins:[], outs:[]}; days.push(map[k]); }
-    if(r.type === 'in') map[k].ins.push(r); else map[k].outs.push(r);
+    if(!map[k]){ map[k] = {key:k, recs:[]}; days.push(map[k]); }
+    map[k].recs.push(r);
   });
   days.sort(function(a,b){ return a.key < b.key ? 1 : -1; });
-  days.forEach(function(d){ d.ins.sort(byTs); d.outs.sort(byTs); });
+  days.forEach(function(d){ d.recs.sort(byTs); });
   return days;
 }
 
+/* 工作日：默认可配置的星期几，单天可用 dayOff 覆盖成「休假 off」或「补班 work」 */
+function weekdayOf(key){ return new Date(key + 'T00:00:00').getDay(); }
+function isWorkday(key, cfg){
+  var ov = (cfg.dayOff || {})[key];
+  if(ov === 'off') return false;
+  if(ov === 'work') return true;
+  var ww = cfg.workWeek || [1,2,3,4,5];
+  return ww.indexOf(weekdayOf(key)) >= 0;
+}
+function slotById(id, cfg){
+  return (cfg.slots || DEFAULT_SLOTS).filter(function(s){ return s.id === id; })[0] ||
+         DEFAULT_SLOTS.filter(function(s){ return s.id === id; })[0] || null;
+}
+
+/* 一天的汇总：多段工时相加、每段各自判迟到早退、按班次算缺卡 */
 function daySummary(day, cfg){
-  var inRec = day.ins.length ? day.ins[0] : null;
-  var outRec = day.outs.length ? day.outs[day.outs.length-1] : null;
-  var inMin = inRec ? minutesOf(hm(inRec.ts)) : null;
-  var outMin = outRec ? minutesOf(hm(outRec.ts)) : null;
-  var inSlot = minutesOf(cfg.inTime), outSlot = minutesOf(cfg.outTime);
-  var lateMin = (inMin != null && inSlot != null) ? Math.max(0, inMin - inSlot) : 0;
-  var earlyMin = (outMin != null && outSlot != null) ? Math.max(0, outSlot - outMin) : 0;
-  var workedMs = null;
-  if(inRec && outRec && outRec.ts > inRec.ts) workedMs = outRec.ts - inRec.ts;
+  var recs = day.recs.slice().sort(byTs);
+  var slots = cfg.slots || DEFAULT_SLOTS;
+  var workday = isWorkday(day.key, cfg);
+  var past = day.key <= dateKey(new Date());
+
+  var bySlot = {}, openIn = null, segs = [], workedMs = 0, otMs = 0;
+  recs.forEach(function(r){
+    if(!bySlot[r.slot]) bySlot[r.slot] = r;
+  });
+  recs.forEach(function(r){
+    var kind = r.kind || r.type;
+    if(kind === 'in'){
+      if(openIn) segs.push({in:openIn, out:null});
+      openIn = r;
+    } else if(openIn){
+      var d = r.ts - openIn.ts;
+      segs.push({in:openIn, out:r});
+      if(d > 0){
+        workedMs += d;
+        if(/^ot_/.test(r.slot) || /^ot_/.test(openIn.slot)) otMs += d;
+      }
+      openIn = null;
+    } else {
+      segs.push({in:null, out:r});
+    }
+  });
+  if(openIn) segs.push({in:openIn, out:null});
+
+  var lateMin = 0, earlyMin = 0, lateCnt = 0, earlyCnt = 0;
+  slots.forEach(function(s){
+    var r = bySlot[s.id];
+    if(!r) return;
+    var plan = minutesOf(s.time), act = minutesOf(hm(r.ts));
+    if(plan == null || act == null) return;
+    if(s.kind === 'in' && act > plan){ lateMin += act - plan; lateCnt++; }
+    if(s.kind === 'out' && act < plan){ earlyMin += plan - act; earlyCnt++; }
+  });
+
+  /* 缺卡只算常规班次（加班段不强制），且只在工作日、且不是未来才计 */
+  var required = slots.filter(function(s){ return !s.optional; });
+  var missSlots = required.filter(function(s){ return !bySlot[s.id]; });
+  var miss = (workday && past) ? missSlots.length : 0;
+
+  var inRec = null, outRec = null;
+  recs.forEach(function(r){
+    var kind = r.kind || r.type;
+    if(kind === 'in' && !inRec) inRec = r;
+    if(kind === 'out') outRec = r;
+  });
+
   var d = new Date(day.key + 'T00:00:00');
   return {
     key: day.key, week: WEEK_CN[d.getDay()],
-    inRec: inRec, outRec: outRec, workedMs: workedMs,
-    lateMin: lateMin, earlyMin: earlyMin,
-    missing: !!(inRec && !outRec), both: !!(inRec && outRec),
-    manual: !!(inRec && inRec.manual) || !!(outRec && outRec.manual)
+    recs: recs, segs: segs, workedMs: workedMs, otMs: otMs,
+    lateMin: lateMin, earlyMin: earlyMin, lateCnt: lateCnt, earlyCnt: earlyCnt,
+    miss: miss, missSlots: missSlots,
+    workday: workday, off: !workday,
+    inRec: inRec, outRec: outRec,
+    missing: miss > 0, both: workedMs > 0,
+    manual: recs.some(function(r){ return r.manual; })
   };
 }
 
 function monthStats(recs, cfg, ym){
   var days = groupDays(recs).map(function(d){ return daySummary(d, cfg); });
-  var totalMs = 0, attend = 0, lateCnt = 0, earlyCnt = 0, missCnt = 0, inSum = 0, inCnt = 0;
+  var totalMs = 0, otMs = 0, attend = 0, lateCnt = 0, earlyCnt = 0, missCnt = 0, offCnt = 0;
+  var startKey = null;
+  days.forEach(function(s){ if(!startKey || s.key < startKey) startKey = s.key; });
   days.forEach(function(s){
-    if(s.inRec){ attend++; inSum += minutesOf(hm(s.inRec.ts)); inCnt++; }
-    if(s.workedMs) totalMs += s.workedMs;
-    if(s.lateMin > 0) lateCnt++;
-    if(s.earlyMin > 0) earlyCnt++;
-    if(s.missing) missCnt++;
+    if(s.recs.length && s.workday) attend++;
+    totalMs += s.workedMs;
+    otMs += s.otMs;
+    lateCnt += s.lateCnt;
+    earlyCnt += s.earlyCnt;
+    /* 记卡之前的日子不追责，否则刚上手会看到整月红框 */
+    if(s.miss && s.key >= startKey) missCnt += s.miss;
+  });
+  /* 只统计本月已登记的休假（含调休），不含默认周末 */
+  Object.keys(cfg.dayOff || {}).forEach(function(k){
+    if(String(k).slice(0,7) === ym && cfg.dayOff[k] === 'off' && k <= dateKey(new Date())) offCnt++;
   });
   return {
-    days: days, attend: attend, totalMs: totalMs,
-    lateCnt: lateCnt, earlyCnt: earlyCnt, missCnt: missCnt,
-    avgIn: inCnt ? Math.round(inSum / inCnt) : null
+    days: days, attend: attend, totalMs: totalMs, otMs: otMs,
+    lateCnt: lateCnt, earlyCnt: earlyCnt, missCnt: missCnt, offCnt: offCnt,
+    startKey: startKey
   };
 }
 
@@ -609,31 +769,108 @@ function todayRecs(){
   return state.cache.filter(function(r){ return r.dateKey === k; });
 }
 
+function visibleSlots(cfg){
+  return (cfg.slots || DEFAULT_SLOTS).filter(function(s){ return !s.optional || cfg.otOn; });
+}
+function mySlots(cfg){
+  return cfg.slots || DEFAULT_SLOTS;
+}
+function slotRecMap(recs){
+  var m = {};
+  recs.forEach(function(r){ if(!m[r.slot]) m[r.slot] = r; });
+  return m;
+}
+/* 推荐打哪个卡：先找「已经到点但还没打」的最晚一个，都打了就给下一个没打的 */
+function recommendSlot(recs, cfg){
+  var now = new Date();
+  var nowMin = now.getHours() * 60 + now.getMinutes();
+  var m = slotRecMap(recs);
+  var list = visibleSlots(cfg);
+  var cand = list.filter(function(s){ return !m[s.id] && minutesOf(s.time) != null && minutesOf(s.time) <= nowMin; });
+  if(cand.length) return cand.sort(function(a,b){ return minutesOf(b.time) - minutesOf(a.time); })[0];
+  var nx = list.filter(function(s){ return !m[s.id]; });
+  if(nx.length) return nx.sort(function(a,b){ return minutesOf(a.time) - minutesOf(b.time); })[0];
+  return null;
+}
+
 function renderHome(){
   var today = todayRecs();
-  var inRec = null, outRec = null;
-  today.forEach(function(r){
-    if(r.type === 'in' && !inRec) inRec = r;
-    if(r.type === 'out') outRec = r;
+  var cfg = state.cfg;
+  var list = visibleSlots(cfg);
+  var required = mySlots(cfg).filter(function(s){ return !s.optional; });
+  var m = slotRecMap(today);
+  var st = daySummary({key: dateKey(new Date()), recs: today}, cfg);
+
+  /* 三格：今天打了几次 / 当前状态 / 今天工时 */
+  var doneReq = required.filter(function(s){ return m[s.id]; }).length;
+  document.getElementById('cellIn').querySelector('b').textContent = doneReq + '/' + required.length;
+  document.getElementById('cellIn').classList.toggle('done', doneReq >= required.length);
+
+  /* 状态按最后一条记录判断：最后一条是上班 → 在岗；否则已离岗 */
+  var last = today.length ? today[today.length-1] : null;
+  var statusTxt = '—', statusTime = '—';
+  if(!last){
+    statusTxt = isWorkday(dateKey(new Date()), cfg) ? '未开始' : '今天休假';
+    statusTime = '—';
+  } else if((last.kind || last.type) === 'in'){
+    statusTxt = '在岗';
+    statusTime = fmtHM(Date.now() - last.ts);
+  } else {
+    statusTxt = '已离岗';
+    statusTime = hm(last.ts);
+  }
+  document.getElementById('cellOut').querySelector('b').textContent = statusTime;
+  document.getElementById('cellOut').querySelector('span').textContent = statusTxt;
+  document.getElementById('cellDur').querySelector('b').textContent = st.workedMs ? fmtHM(st.workedMs) : '—';
+
+  /* 主按钮 = 现在最该打的那一站 */
+  var rec = recommendSlot(today, cfg);
+  var btn = document.getElementById('btnPunchMain');
+  var nm = document.getElementById('mainName');
+  var hint = document.getElementById('mainHint');
+  var badge = document.getElementById('badgeMain');
+  if(rec){
+    btn.setAttribute('data-slot', rec.id);
+    nm.textContent = rec.name + '打卡';
+    var late = (function(){
+      var plan = minutesOf(rec.time);
+      var nowMin = new Date().getHours()*60 + new Date().getMinutes();
+      if(plan == null) return '';
+      if(rec.kind === 'in' && nowMin > plan) return ' · 已过点 ' + (nowMin-plan) + ' 分';
+      return '';
+    })();
+    hint.textContent = '计划 ' + rec.time + late;
+    badge.hidden = false;
+    badge.textContent = (minutesOf(rec.time) != null && (new Date().getHours()*60 + new Date().getMinutes()) >= minutesOf(rec.time)) ? '现在该打' : '下一站';
+  } else {
+    btn.setAttribute('data-slot', '');
+    nm.textContent = '今天的卡都打完了';
+    hint.textContent = '还有加班就点下面的「加班上班」';
+    badge.hidden = true;
+  }
+
+  /* 班次网格 */
+  var grid = document.getElementById('slotGrid');
+  grid.innerHTML = list.map(function(s){
+    var r = m[s.id];
+    var cls = 'slot' + (r ? ' done' : '') + (s.optional ? ' opt' : '') + (rec && rec.id === s.id ? ' next' : '');
+    return '<button class="' + cls + '" data-slot="' + esc(s.id) + '">' +
+      '<span class="s-l"><span class="s-name">' + esc(s.name) + '</span>' +
+      '<span class="s-plan">计划 ' + esc(s.time) + '</span></span>' +
+      '<span class="s-right' + (r ? '' : ' none') + '">' + (r ? hm(r.ts) : '未打') + '</span>' +
+      '</button>';
+  }).join('');
+  grid.querySelectorAll('[data-slot]').forEach(function(el){
+    el.onclick = function(){ startPunch(el.getAttribute('data-slot')); };
   });
-  var cellIn = document.getElementById('cellIn');
-  var cellOut = document.getElementById('cellOut');
-  var cellDur = document.getElementById('cellDur');
-  cellIn.querySelector('b').textContent = inRec ? hm(inRec.ts) : '—';
-  cellOut.querySelector('b').textContent = outRec ? hm(outRec.ts) : '—';
-  cellIn.classList.toggle('done', !!inRec);
-  cellOut.classList.toggle('done', !!outRec);
-  var dur = (inRec && outRec && outRec.ts > inRec.ts) ? outRec.ts - inRec.ts : (inRec ? Date.now() - inRec.ts : null);
-  cellDur.querySelector('b').textContent = dur ? fmtHM(dur) : '—';
+  btn.onclick = function(){
+    var s = btn.getAttribute('data-slot');
+    if(s) startPunch(s);
+    else openSlotPicker();
+  };
+  document.getElementById('btnSlotPick').onclick = openSlotPicker;
 
-  var suggestIn = !inRec;
-  document.getElementById('badgeIn').hidden = !suggestIn;
-  var badgeOut = document.getElementById('badgeOut');
-  badgeOut.hidden = !(inRec && !outRec);
-  document.getElementById('btnIn').className = 'punch ' + (suggestIn ? 'primary' : 'ghost');
-  document.getElementById('btnOut').className = 'punch ' + ((inRec && !outRec) ? 'primary' : 'ghost accent');
-
-  // 最近 4 条
+  /* 最近 4 条 */
   var box = document.getElementById('homeRecent');
   var recent = state.cache.slice(-4).reverse();
   if(!recent.length){
@@ -648,10 +885,30 @@ function renderHome(){
   });
 }
 
+/* 手动选班次（比如补打一个已经过点、或别的日子的卡） */
+function openSlotPicker(){
+  var list = visibleSlots(state.cfg);
+  openSheet(
+    '<h3>打哪个卡</h3>' +
+    '<p class="sh-sub">选一个班次，会调起相机拍照并记到那个班次上。</p>' +
+    '<div class="slot-grid">' + list.map(function(s){
+      return '<button class="slot' + (s.optional ? ' opt' : '') + '" data-slot="' + esc(s.id) + '">' +
+        '<span class="s-l"><span class="s-name">' + esc(s.name) + '</span>' +
+        '<span class="s-plan">计划 ' + esc(s.time) + '</span></span>' +
+        '<span class="s-right">拍照</span></button>';
+    }).join('') + '</div>' +
+    '<p class="note">补打卡请用「记录」页右上角的「＋ 补卡」。</p>'
+  );
+  document.querySelectorAll('#sheet [data-slot]').forEach(function(el){
+    el.onclick = function(){ closeSheet(); startPunch(el.getAttribute('data-slot')); };
+  });
+}
+
 function recRowHtml(r, opts){
   opts = opts || {};
   var thumb = r.thumb ? '' : ' empty';
-  var tag = r.type === 'in' ? '<span class="tag in">上班</span>' : '<span class="tag out">下班</span>';
+  var kind = r.kind || r.type;
+  var tag = '<span class="tag ' + (kind === 'in' ? 'in' : 'out') + '">' + esc(r.slotName || (kind === 'in' ? '上班' : '下班')) + '</span>';
   var manual = r.manual ? '<span class="tag manual">补卡</span>' : '';
   var place = r.place ? esc(r.place) : '未记录位置';
   return '<div class="rec" data-rid="' + esc(r.id) + '">' +
@@ -694,14 +951,19 @@ function renderHistory(){
   var days = groupDays(recs);
   var html = days.map(function(d){
     var s = daySummary(d, state.cfg);
-    var sumTxt = s.workedMs ? ('工时 ' + fmtDur(s.workedMs)) : (s.missing ? '缺下班卡' : '');
-    var pill = (s.lateMin > 0) ? '<span class="d-pill">迟到' + s.lateMin + '分</span>' : '';
+    var sumTxt = s.workedMs ? ('工时 ' + fmtDur(s.workedMs)) : (s.miss ? ('缺 ' + s.miss + ' 次卡') : '');
+    var pills = [];
+    if(s.lateMin > 0) pills.push('<span class="d-pill">迟到' + s.lateMin + '分</span>');
+    if(s.earlyMin > 0) pills.push('<span class="d-pill">早退' + s.earlyMin + '分</span>');
+    if(s.miss > 0) pills.push('<span class="d-pill" style="color:var(--warn);background:#fbf1e8">缺' + s.miss + '次</span>');
+    if(s.otMs > 0) pills.push('<span class="d-pill" style="color:var(--primary);background:var(--primary-soft)">加班' + fmtDur(s.otMs) + '</span>');
     var fd = new Date(d.key + 'T00:00:00');
-    var rows = d.ins.concat(d.outs).sort(byTs).map(function(r){ return recRowHtml(r, {chev:true}); }).join('');
+    var rows = d.recs.map(function(r){ return recRowHtml(r, {chev:true}); }).join('');
     return '<div class="day-group">' +
       '<div class="day-head"><span class="d-date">' + (fd.getMonth()+1) + '月' + fd.getDate() + '日</span>' +
-      '<span class="d-week">' + s.week + '</span>' + pill +
-      '<span class="d-sum">' + sumTxt + '</span></div>' + rows + '</div>';
+      '<span class="d-week">' + s.week + '</span>' + pills.join('') +
+      '<span class="d-sum">' + sumTxt + '</span></div>' +
+      rows.replace(/data-rid/g, 'data-rid') + '</div>';
   }).join('');
   box.innerHTML = html;
   paintThumbs(box);
@@ -714,44 +976,55 @@ function renderStats(){
   var ym = ymKey(state.month);
   document.getElementById('sMonthLabel').textContent = state.month.getFullYear() + '年' + (state.month.getMonth()+1) + '月';
   var recs = state.cache.filter(function(r){ return String(r.dateKey).slice(0,7) === ym; });
-  var st = monthStats(recs, state.cfg);
+  var st = monthStats(recs, state.cfg, ym);
   document.getElementById('stDays').innerHTML = st.attend + '<span>天</span>';
   document.getElementById('stHours').innerHTML = fmtHours(st.totalMs) + '<span>小时</span>';
   document.getElementById('stLate').innerHTML = st.lateCnt + '<span>次</span>';
   document.getElementById('stEarly').innerHTML = st.earlyCnt + '<span>次</span>';
+  document.getElementById('statExtra').textContent =
+    '加班 ' + fmtHours(st.otMs) + ' 小时 · 缺卡 ' + st.missCnt + ' 次 · 登记休假 ' + st.offCnt + ' 天';
 
   // 月历（周一开头）
   var y = state.month.getFullYear(), m = state.month.getMonth();
   var first = new Date(y, m, 1);
   var lead = (first.getDay() + 6) % 7;
   var total = new Date(y, m+1, 0).getDate();
+  var todayKey = dateKey(new Date());
   var cells = [];
   for(var i=0;i<lead;i++) cells.push('<div class="cal-cell blank"></div>');
   for(var day=1; day<=total; day++){
     var key = y + '-' + pad2(m+1) + '-' + pad2(day);
     var ds = st.days.filter(function(s){ return s.key === key; })[0];
-    var cls = 'cal-cell', flag = '';
-    if(ds){
-      cls += ' has';
-      if(!ds.both) cls += ' partial';
-      if(ds.lateMin > 0 || ds.earlyMin > 0){
-        flag = '<span class="flag">' + (ds.lateMin>0?'<i></i>':'') + (ds.earlyMin>0?'<i></i>':'') + '</span>';
-      }
+    var ov = (state.cfg.dayOff || {})[key];
+    var workday = isWorkday(key, state.cfg);
+    var cls = 'cal-cell', flag = '', mini = '';
+    if(ds && ds.recs.length) cls += ' has';
+    if(ds && ds.recs.length && ds.miss) cls += ' partial';
+    if(workday && key <= todayKey && st.startKey && key >= st.startKey && (!ds || ds.miss)) cls += ' miss';
+    if(!workday) cls += ' off';
+    if(ov === 'off') mini = '<span class="mini">休</span>';
+    if(ov === 'work') mini = '<span class="mini">班</span>';
+    if(ds && (ds.lateMin > 0 || ds.earlyMin > 0)){
+      flag = '<span class="flag">' + (ds.lateMin>0?'<i></i>':'') + (ds.earlyMin>0?'<i></i>':'') + '</span>';
     }
-    cells.push('<div class="' + cls + '">' + day + flag + '</div>');
+    cells.push('<div class="' + cls + '" data-day="' + key + '">' + day + mini + flag + '</div>');
   }
-  document.getElementById('calGrid').innerHTML = cells.join('');
+  var grid = document.getElementById('calGrid');
+  grid.innerHTML = cells.join('');
+  grid.querySelectorAll('[data-day]').forEach(function(el){
+    el.onclick = function(){ openDaySheet(el.getAttribute('data-day')); };
+  });
 
-  var anom = st.days.filter(function(s){ return s.lateMin > 0 || s.earlyMin > 0 || s.missing; });
+  var anom = st.days.filter(function(s){ return s.lateMin > 0 || s.earlyMin > 0 || s.miss > 0; });
   var abox = document.getElementById('anomalyList');
   if(!anom.length){
     abox.innerHTML = '<div class="empty-state"><b>本月没有异常</b>迟到、早退、缺卡会列在这里。</div>';
   } else {
     abox.innerHTML = anom.map(function(s){
       var bits = [];
-      if(s.lateMin > 0) bits.push('迟到 ' + s.lateMin + ' 分钟');
-      if(s.earlyMin > 0) bits.push('早退 ' + s.earlyMin + ' 分钟');
-      if(s.missing) bits.push('只有上班卡');
+      if(s.lateCnt > 0) bits.push('迟到 ' + s.lateMin + ' 分钟（' + s.lateCnt + ' 个班次）');
+      if(s.earlyCnt > 0) bits.push('早退 ' + s.earlyMin + ' 分钟（' + s.earlyCnt + ' 个班次）');
+      if(s.miss > 0) bits.push('缺 ' + s.miss + ' 个班次：' + s.missSlots.map(function(x){ return x.name; }).join('、'));
       var fd = new Date(s.key + 'T00:00:00');
       return '<div class="day-head" style="padding:11px 14px 0"><span class="d-date">' +
         (fd.getMonth()+1) + '月' + fd.getDate() + '日</span><span class="d-week">' + s.week + '</span>' +
@@ -759,6 +1032,36 @@ function renderStats(){
         '<div style="height:11px"></div>';
     }).join('');
   }
+}
+
+/* 点日历某天：标休假 / 补班 / 恢复默认 */
+function openDaySheet(key){
+  var cfg = state.cfg;
+  var ov = (cfg.dayOff || {})[key];
+  var workday = isWorkday(key, cfg);
+  var fd = new Date(key + 'T00:00:00');
+  var label = (fd.getMonth()+1) + '月' + fd.getDate() + '日 ' + WEEK_CN[fd.getDay()];
+  var stateTxt = ov === 'off' ? '已标休假' : (ov === 'work' ? '已标补班' : (workday ? '默认工作日' : '默认休息日'));
+  openSheet(
+    '<h3>' + label + '</h3>' +
+    '<p class="sh-sub">' + stateTxt + '。这天不来上班就标休假，不该考核缺卡；周末来了就标补班。</p>' +
+    '<div style="display:flex;flex-direction:column;gap:9px;margin-top:14px">' +
+      '<button class="btn primary" data-do="off">标记为休假</button>' +
+      '<button class="btn ghost" data-do="work">标记为补班（周末上班）</button>' +
+      '<button class="btn ghost" data-do="auto">恢复默认（按星期几）</button>' +
+    '</div>'
+  );
+  function apply(v){
+    var next = Object.assign({}, cfg.dayOff || {});
+    if(v) next[key] = v; else delete next[key];
+    setCfg({dayOff: next}).then(function(c){
+      state.cfg = c; closeSheet();
+      return renderAll();
+    }).then(function(){ toast(v === 'off' ? '已标休假' : (v === 'work' ? '已标补班' : '已恢复默认')); });
+  }
+  document.querySelectorAll('#sheet [data-do]').forEach(function(b){
+    b.onclick = function(){ apply(b.getAttribute('data-do') === 'auto' ? null : b.getAttribute('data-do')); };
+  });
 }
 
 function renderStorage(){
@@ -777,12 +1080,20 @@ function renderStorage(){
 
 function setBadgeText(){
   var t = todayRecs();
-  var hasIn = t.some(function(r){ return r.type === 'in'; });
-  var hasOut = t.some(function(r){ return r.type === 'out'; });
+  var cfg = state.cfg;
+  var m = slotRecMap(t);
+  var required = mySlots(cfg).filter(function(s){ return !s.optional; });
+  var done = required.filter(function(s){ return m[s.id]; }).length;
   var hint = document.getElementById('hintText');
-  if(!hasIn) hint.textContent = '今天还没打上班卡';
-  else if(!hasOut) hint.textContent = '上班已记 ' + hm(t.filter(function(r){return r.type==='in';})[0].ts) + '，下班记得拍照';
-  else hint.textContent = '今天打卡已完成';
+  var rec = recommendSlot(t, cfg);
+  if(!isWorkday(dateKey(new Date()), cfg)){
+    hint.textContent = '今天登记为休假，可以不打；要打也能打';
+  } else if(!rec){
+    hint.textContent = '今天 ' + done + '/' + required.length + ' 个班次都打完了';
+  } else {
+    var left = required.filter(function(s){ return !m[s.id]; });
+    hint.textContent = '已打 ' + done + '/' + required.length + '，下一个：' + rec.name + ' ' + rec.time;
+  }
 }
 
 /* ============ 时钟 ============ */
@@ -982,7 +1293,7 @@ function drawWatermark(ctx, w, h, meta){
   ctx.fillStyle = g;
   ctx.fillRect(0, h - gradH, w, gradH);
 
-  var typeTxt = meta.type === 'in' ? '上班打卡' : '下班打卡';
+  var typeTxt = meta.label || (meta.type === 'in' ? '上班打卡' : '下班打卡');
   ctx.textBaseline = 'alphabetic';
   var yBottom = h - pad;
 
@@ -1064,11 +1375,15 @@ function processPhoto(file, meta){
 }
 
 /* ============ 打卡流程 ============ */
-var pending = {type:'in', file:null};
+var pending = {slot:'am_in', file:null};
 var photoState = null;
 
-function startPunch(type){
-  pending.type = type;
+function curSlot(){
+  return slotById(pending.slot, state.cfg) || (state.cfg.slots || DEFAULT_SLOTS)[0];
+}
+function startPunch(slotId){
+  if(!slotId) slotId = (recommendSlot(todayRecs(), state.cfg) || {}).id || 'am_in';
+  pending.slot = slotId;
   var input = document.getElementById(state.cfg.strict ? 'fileCam' : 'fileAlbum');
   input.value = '';
   input.click();
@@ -1083,19 +1398,24 @@ function onFilePicked(e){
   openPhotoConfirm();
 }
 
+function slotOptionsHtml(sel){
+  return visibleSlots(state.cfg).map(function(s){
+    return '<option value="' + esc(s.id) + '"' + (s.id === sel ? ' selected' : '') + '>' +
+      esc(s.name) + ' · 计划 ' + esc(s.time) + '</option>';
+  }).join('');
+}
+
 function openPhotoConfirm(){
-  var type = pending.type;
+  var slot = curSlot();
   var now = new Date();
   var stamp = now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate()) + ' ' + hms(now.getTime());
   openSheet(
-    '<h3>' + (type === 'in' ? '上班打卡' : '下班打卡') + '</h3>' +
+    '<h3>' + esc(slot.name) + '打卡</h3>' +
     '<p class="sh-sub">照片已自动加水印，核对信息后保存。</p>' +
     '<div class="shot-wrap"><img id="shotPreview" alt="打卡照片"></div>' +
     '<div class="shot-meta"><span id="shotState">处理中</span></div>' +
-    '<div class="field"><label>打卡类型</label>' +
-      '<div class="seg" id="segType">' +
-      '<button data-t="in" class="' + (type==='in'?'on':'') + '">上班</button>' +
-      '<button data-t="out" class="' + (type==='out'?'on':'') + '">下班</button></div></div>' +
+    '<div class="field"><label>班次（选错了可以在这里改）</label>' +
+      '<select id="fSlot">' + slotOptionsHtml(slot.id) + '</select></div>' +
     '<div class="field"><label>地点（自动定位失败可手填，如“公司门口”）</label>' +
       '<input type="text" id="fPlace" placeholder="定位中…"></div>' +
     '<div class="field"><label>备注（可不填）</label>' +
@@ -1135,31 +1455,31 @@ function openPhotoConfirm(){
     });
   });
 
-  var seg = document.getElementById('segType');
-  seg.querySelectorAll('button').forEach(function(b){
-    b.onclick = function(){
-      pending.type = b.getAttribute('data-t');
-      seg.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x === b); });
-      var h3 = document.querySelector('#sheet h3');
-      if(h3) h3.textContent = (pending.type === 'in' ? '上班打卡' : '下班打卡');
-      var curPlace = (document.getElementById('fPlace') || {}).value || '';
-      renderShot(curPlace);
-    };
-  });
+  var sel = document.getElementById('fSlot');
+  sel.onchange = function(){
+    pending.slot = sel.value;
+    var s = curSlot();
+    var h3 = document.querySelector('#sheet h3');
+    if(h3) h3.textContent = s.name + '打卡';
+    var curPlace = (document.getElementById('fPlace') || {}).value || '';
+    renderShot(curPlace);
+  };
   document.getElementById('btnReshoot').onclick = function(){
     closeSheet();
-    setTimeout(function(){ startPunch(pending.type); }, 60);
+    setTimeout(function(){ startPunch(pending.slot); }, 60);
   };
   document.getElementById('btnSavePunch').onclick = savePunch;
 }
 
-/* 重新生成带水印的预览（地点/类型变了就重画，保证照片和记录一致） */
+/* 重新生成带水印的预览（地点/班次变了就重画，保证照片和记录一致） */
 var renderSeq = 0;
 function renderShot(place){
   if(!pending.file || !photoState) return Promise.resolve(null);
   var seq = ++renderSeq;
+  var slot = curSlot();
   var meta = {
-    type: pending.type, stamp: photoState.stamp, place: place || '',
+    type: slot.kind, label: slot.name + '打卡',
+    stamp: photoState.stamp, place: place || '',
     coord: photoState.coord || '',
     company: state.cfg.company, name: state.cfg.name, watermark: state.cfg.watermark
   };
@@ -1188,7 +1508,9 @@ function savePunch(){
   if(!photoState || !photoState.out){ toast('照片还没处理好，等一下'); return; }
   var place = ((document.getElementById('fPlace') || {}).value || '').trim();
   var note = ((document.getElementById('fNote') || {}).value || '').trim();
-  var type = pending.type;
+  var slot = curSlot();
+  var sel = document.getElementById('fSlot');
+  if(sel) pending.slot = sel.value, slot = curSlot();
   btn.disabled = true;
   btn.textContent = '保存中…';
   var ready = (place !== photoState.place)
@@ -1198,7 +1520,7 @@ function savePunch(){
     if(!out) throw new Error('水印生成失败');
     var ts = Date.now();
     var rec = {
-      id: uid(), type: type, ts: ts,
+      id: uid(), slot: slot.id, slotName: slot.name, kind: slot.kind, type: slot.kind, ts: ts,
       dateKey: dateKey(new Date(ts)),
       place: place, coord: (photoState.coord || ''), note: note,
       company: state.cfg.company || '', name: state.cfg.name || '',
@@ -1209,11 +1531,11 @@ function savePunch(){
     return putRecord(rec).then(function(){
       if(photoState && photoState.url) URL.revokeObjectURL(photoState.url);
       photoState = null;
-      pending = {type:'in', file:null};
+      pending = {slot:'am_in', file:null};
       closeSheet();
       return renderAll();
     }).then(function(){
-      toast((type === 'in' ? '上班' : '下班') + '打卡已记录 · ' + hm(ts));
+      toast(slot.name + '已记录 · ' + hm(ts));
     });
   }).catch(function(err){
     btn.disabled = false;
@@ -1227,8 +1549,9 @@ function openRecordDetail(id){
   var rec = state.cache.filter(function(r){ return r.id === id; })[0];
   if(!rec) return;
   var url = rec.photo ? URL.createObjectURL(rec.photo) : '';
+  var slotName = rec.slotName || ((rec.kind || rec.type) === 'in' ? '上班' : '下班');
   var rows = [
-    ['类型', rec.type === 'in' ? '上班打卡' : '下班打卡'],
+    ['班次', slotName],
     ['时间', hms(rec.ts)],
     ['日期', rec.dateKey],
     ['地点', rec.place || '未记录'],
@@ -1255,34 +1578,28 @@ function openRecordDetail(id){
 function openManualSheet(){
   var today = dateKey(new Date());
   var now = new Date();
+  var def = (recommendSlot(todayRecs(), state.cfg) || {}).id || 'am_in';
   openSheet(
     '<h3>手动补卡</h3>' +
     '<p class="sh-sub">忘记打卡时用，记录会标注“补卡”，没有照片。</p>' +
     '<div class="field"><label>日期</label><input type="date" id="mDate" value="' + today + '"></div>' +
-    '<div class="field"><label>类型</label><div class="seg" id="mSeg">' +
-      '<button data-t="in" class="on">上班</button><button data-t="out">下班</button></div></div>' +
+    '<div class="field"><label>班次</label><select id="mSlot">' + slotOptionsHtml(def) + '</select></div>' +
     '<div class="field"><label>时间</label><input type="time" id="mTime" value="' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + '"></div>' +
     '<div class="field"><label>备注</label><input type="text" id="mNote" placeholder="例如：忘记打卡，同事可证明"></div>' +
     '<div class="btn-row"><button class="btn ghost" id="mCancel">取消</button><button class="btn primary" id="mSave">保存</button></div>'
   );
-  var mtype = 'in';
-  var seg = document.getElementById('mSeg');
-  seg.querySelectorAll('button').forEach(function(b){
-    b.onclick = function(){
-      mtype = b.getAttribute('data-t');
-      seg.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x === b); });
-    };
-  });
   document.getElementById('mCancel').onclick = closeSheet;
   document.getElementById('mSave').onclick = function(){
     var dv = document.getElementById('mDate').value;
     var tv = document.getElementById('mTime').value;
+    var slot = slotById(document.getElementById('mSlot').value, state.cfg) || curSlot();
     if(!dv || !tv){ toast('请填写日期和时间'); return; }
     var d = new Date(dv + 'T' + tv + ':00');
     if(isNaN(d.getTime())){ toast('时间格式不对'); return; }
     if(d.getTime() > Date.now() + 60000){ toast('不能补未来的时间'); return; }
     var rec = {
-      id: uid(), type: mtype, ts: d.getTime(), dateKey: dv,
+      id: uid(), slot: slot.id, slotName: slot.name, kind: slot.kind, type: slot.kind,
+      ts: d.getTime(), dateKey: dv,
       place: '', note: (document.getElementById('mNote').value || '').trim(),
       company: state.cfg.company || '', name: state.cfg.name || '',
       photo: null, thumb: null, manual: true, createdAt: Date.now()
@@ -1298,28 +1615,39 @@ function csvCell(v){
   return s;
 }
 function photoName(rec){
-  return '打卡照片/' + rec.dateKey + '_' + (rec.type === 'in' ? '上班' : '下班') + '_' + hms(rec.ts).replace(/:/g, '') + '.jpg';
+  var s = slotById(rec.slot, state.cfg) || {name:'打卡'};
+  return '打卡照片/' + rec.dateKey + '_' + s.name + '_' + hms(rec.ts).replace(/:/g, '') + '.jpg';
 }
+/* 一天多个班次，CSV 改成「一条打卡一行」，迟到/早退按该班次计划时间判 */
 function buildCsv(recs, cfg){
-  var days = groupDays(recs);
-  days.sort(function(a,b){ return a.key < b.key ? -1 : 1; });
-  var head = ['日期','星期','上班打卡','下班打卡','工时(小时)','迟到(分钟)','早退(分钟)','状态','地点','备注','照片'];
+  var head = ['日期','星期','班次','类型','时间','地点','坐标','迟到(分钟)','早退(分钟)','工时(小时)','休假/补班','备注','照片'];
   var lines = [head.map(csvCell).join(',')];
-  days.forEach(function(d){
-    var s = daySummary(d, cfg);
-    var status = s.both ? '齐全' : (s.inRec ? '缺下班卡' : '仅下班卡');
-    if(s.manual) status = '补卡 · ' + status;
-    var places = [s.inRec && (s.inRec.place || s.inRec.coord), s.outRec && (s.outRec.place || s.outRec.coord)].filter(Boolean);
-    var notes = [s.inRec && s.inRec.note, s.outRec && s.outRec.note].filter(Boolean);
-    var photos = [s.inRec, s.outRec].filter(function(r){ return r && r.photo; }).map(photoName).join(' | ');
-    lines.push([
-      s.key, s.week,
-      s.inRec ? hms(s.inRec.ts) : '',
-      s.outRec ? hms(s.outRec.ts) : '',
-      s.workedMs ? fmtHours(s.workedMs) : '',
-      s.lateMin || '', s.earlyMin || '',
-      status, places.join(' | '), notes.join(' | '), photos
-    ].map(csvCell).join(','));
+  groupDays(recs).sort(function(a,b){ return a.key < b.key ? -1 : 1; }).forEach(function(day){
+    var s = daySummary(day, cfg);
+    var ov = (cfg.dayOff || {})[day.key];
+    var dayFlag = ov === 'off' ? '休假' : (ov === 'work' ? '补班' : (s.workday ? '' : '休息日'));
+    day.recs.forEach(function(r){
+      var slot = slotById(r.slot, cfg) || {name:r.slotName || '', time:'', kind:r.kind};
+      var plan = minutesOf(slot.time), act = minutesOf(hm(r.ts));
+      var late = '', early = '';
+      if(plan != null && act != null){
+        if(slot.kind === 'in' && act > plan) late = act - plan;
+        if(slot.kind === 'out' && act < plan) early = plan - act;
+      }
+      lines.push([
+        r.dateKey, s.week, r.slotName || slot.name,
+        (r.kind || r.type) === 'in' ? '上班' : '下班',
+        hms(r.ts), r.place || '', r.coord || '', late, early,
+        '', dayFlag, r.note || '', r.photo ? photoName(r) : ''
+      ].map(csvCell).join(','));
+    });
+    /* 当天汇总行，方便核对总工时 */
+    if(s.workedMs){
+      lines.push([
+        day.key, s.week, '— 当日合计 —', '', '', '', '', '', '',
+        fmtHours(s.workedMs), dayFlag, s.otMs ? ('加班 ' + fmtHours(s.otMs) + ' 小时') : '', ''
+      ].map(csvCell).join(','));
+    }
   });
   return '\ufeff' + lines.join('\r\n');
 }
@@ -1662,8 +1990,13 @@ function openAutoSheet(){
 
 /* ============ 设置页 ============ */
 function renderSettingsForm(){
-  document.getElementById('cfgInTime').value = state.cfg.inTime;
-  document.getElementById('cfgOutTime').value = state.cfg.outTime;
+  (state.cfg.slots || DEFAULT_SLOTS).forEach(function(s){
+    var el = document.getElementById('slotT_' + s.id);
+    if(el) el.value = s.time;
+    var nm = document.getElementById('slotN_' + s.id);
+    if(nm) nm.value = s.name;
+  });
+  document.getElementById('swOt').classList.toggle('on', !!state.cfg.otOn);
   document.getElementById('cfgCompany').value = state.cfg.company || '';
   document.getElementById('cfgName').value = state.cfg.name || '';
   document.getElementById('swWatermark').classList.toggle('on', !!state.cfg.watermark);
@@ -1671,6 +2004,23 @@ function renderSettingsForm(){
   document.getElementById('swStrict').classList.toggle('on', !!state.cfg.strict);
   document.getElementById('swAddr').classList.toggle('on', !!state.cfg.addr);
   document.getElementById('cfgAmap').value = state.cfg.amapKey || '';
+  var ww = state.cfg.workWeek || [1,2,3,4,5];
+  var box = document.getElementById('weekPicker');
+  if(box){
+    box.querySelectorAll('[data-w]').forEach(function(b){
+      b.classList.toggle('on', ww.indexOf(parseInt(b.getAttribute('data-w'),10)) >= 0);
+    });
+  }
+}
+
+function saveSlotTime(id, patch){
+  var slots = (state.cfg.slots || DEFAULT_SLOTS).map(function(s){
+    return s.id === id ? Object.assign({}, s, patch) : s;
+  });
+  setCfg({slots: slots}).then(function(cfg){
+    state.cfg = cfg;
+    renderSettingsForm(); renderAll(); toast('已保存');
+  });
 }
 
 function bindSetting(elId, key, isSwitch){
@@ -1711,11 +2061,12 @@ function openHelpSheet(){
     '<div class="section-title" style="margin:0 0 8px"><h2>方案 A · 提醒事项（最省事）</h2></div>' +
     '<ol class="steps">' +
       '<li>打开「提醒事项」，新建列表「打卡」</li>' +
-      '<li>新建提醒「上班打卡」，点「详细信息」→ 打开「在指定时间」，设成你的上班时间</li>' +
-      '<li>把「重复」设为「每天」</li>' +
-      '<li>在备注里粘贴上面的打卡页链接</li>' +
-      '<li>同样再建一条「下班打卡」，时间设成下班时间</li>' +
-      '<li>通知来了点开 → 点备注里的链接 → 直接进打卡页</li>' +
+      '<li>按班次各建一条提醒：上午上班、上午下班、下午上班、下午下班，'+
+        '要加班再加「加班上班」「加班下班」</li>' +
+      '<li>每条点「详细信息」→ 打开「在指定时间」，设成对应班次的时间，' +
+        '点「重复」→「每天」</li>' +
+      '<li>备注里粘贴上面的打卡页链接</li>' +
+      '<li>通知来了点开 → 点备注链接 → 直接进打卡页</li>' +
     '</ol>' +
     '<div class="section-title" style="margin:18px 0 8px"><h2>方案 B · 快捷指令（到点自动弹出）</h2></div>' +
     '<ol class="steps">' +
@@ -1723,7 +2074,7 @@ function openHelpSheet(){
       '<li>选「特定时间」→ 设时间 → 选「每天」→ 下一步</li>' +
       '<li>添加操作「打开 URL」，粘贴上面的打卡页链接</li>' +
       '<li>关掉「运行前询问」，点完成</li>' +
-      '<li>下班再建一个同样的自动化</li>' +
+      '<li>其他班次各建一个同样的自动化（四段就四个）</li>' +
     '</ol>' +
     '<div class="section-title" style="margin:18px 0 8px"><h2>方案 C · 纯原生兜底（照片直接进相簿）</h2></div>' +
     '<p class="list-simple">担心网页数据被系统清理时用：快捷指令里依次加「拍摄照片」→「存储到相簿」（新建「通勤打卡」相簿）→「文本」写当前日期时间 →「追加到备忘录」。照片落在系统相簿里，永远不会随网页数据消失。</p>' +
@@ -1781,8 +2132,6 @@ function bindEvents(){
       switchView(v);
     };
   });
-  document.getElementById('btnIn').onclick = function(){ startPunch('in'); };
-  document.getElementById('btnOut').onclick = function(){ startPunch('out'); };
   document.getElementById('btnHint').onclick = openHelpSheet;
   document.getElementById('btnHelp').onclick = openHelpSheet;
   document.getElementById('rowRemind').onclick = openHelpSheet;
@@ -1797,8 +2146,38 @@ function bindEvents(){
   document.getElementById('rowBackup').onclick = exportBackup;
   document.getElementById('rowAuto').onclick = openAutoSheet;
   document.getElementById('btnExportCsv2').onclick = function(){ exportCsv('month'); };
-  bindSetting('cfgInTime', 'inTime', false);
-  bindSetting('cfgOutTime', 'outTime', false);
+  ['am_in','am_out','pm_in','pm_out','ot_in','ot_out'].forEach(function(id){
+    var el = document.getElementById('slotT_' + id);
+    if(!el) return;
+    el.onchange = function(){
+      var v = el.value;
+      if(!/^\d{2}:\d{2}$/.test(v)) return;
+      saveSlotTime(id, {time: v});
+    };
+  });
+  document.getElementById('swOt').onclick = function(){
+    var val = !state.cfg.otOn;
+    setCfg({otOn: val}).then(function(cfg){
+      state.cfg = cfg;
+      renderSettingsForm(); renderAll();
+      toast(val ? '已显示加班班次' : '已隐藏加班班次');
+    });
+  };
+  var wp = document.getElementById('weekPicker');
+  if(wp){
+    wp.querySelectorAll('[data-w]').forEach(function(b){
+      b.onclick = function(){
+        var w = parseInt(b.getAttribute('data-w'), 10);
+        var ww = (state.cfg.workWeek || [1,2,3,4,5]).slice();
+        var i = ww.indexOf(w);
+        if(i >= 0) ww.splice(i, 1); else ww.push(w);
+        ww.sort(function(a, b){ return a - b; });
+        setCfg({workWeek: ww}).then(function(cfg){
+          state.cfg = cfg; renderSettingsForm(); renderAll(); toast('已保存');
+        });
+      };
+    });
+  }
   bindSetting('cfgCompany', 'company', false);
   bindSetting('cfgName', 'name', false);
   bindSetting('swWatermark', 'watermark', true);
@@ -1839,7 +2218,11 @@ window.__dk = {
   makeZip: makeZip,
   processPhoto: processPhoto,
   groupDays: groupDays,
+  daySummary: daySummary,
+  isWorkday: isWorkday,
   monthStats: monthStats,
+  recommendSlot: recommendSlot,
+  DEFAULT_SLOTS: DEFAULT_SLOTS,
   autoRun: autoRun,
   saveCsvAuto: saveCsvAuto,
   saveBackupAuto: saveBackupAuto,

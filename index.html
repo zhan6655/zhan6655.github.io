@@ -239,6 +239,15 @@ main{flex:1;padding:16px 16px 12px}
   max-width:80vw;text-align:center;line-height:1.5;
 }
 .toast[hidden]{display:none}
+.auto-bar{
+  position:fixed;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 60px);z-index:70;
+  display:flex;align-items:center;gap:8px;
+  background:var(--primary);color:#fff;border-radius:13px;padding:11px 13px;
+  font-size:13px;line-height:1.45;box-shadow:0 10px 26px rgba(23,32,28,.24);
+}
+.auto-bar-txt{flex:1;min-width:0;word-break:break-word}
+.auto-bar-btn{flex:0 0 auto;background:#fff;color:var(--primary);border-radius:9px;padding:7px 11px;font-size:12px;font-weight:600}
+.auto-bar-x{flex:0 0 auto;color:#fff;font-size:19px;line-height:1;padding:0 2px}
 @media (min-width:560px){
   body{background:#eceae4}
   .app{box-shadow:0 0 0 1px rgba(23,32,28,.06),0 24px 60px rgba(23,32,28,.08);min-height:100vh}
@@ -375,6 +384,7 @@ main{flex:1;padding:16px 16px 12px}
           <button class="set-row" id="rowCsv"><span class="k"><b>导出打卡 CSV</b><span>Excel 可直接打开，按月份选择</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
           <button class="set-row" id="rowZip"><span class="k"><b>导出照片包（ZIP）</b><span>照片 + CSV 一起打包</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
           <button class="set-row" id="rowBackup"><span class="k"><b>完整备份</b><span>全部照片 + 数据，建议每月一次</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="set-row" id="rowAuto"><span class="k"><b>定时自动存档</b><span>到点自动存到「文件」App，或弹一封邮件草稿</span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
         </div>
         <p class="note" id="storageNote">正在统计占用…</p>
       </div>
@@ -1324,14 +1334,11 @@ function exportZip(scope){
   });
 }
 
-function exportBackup(){
-  var recs = state.cache.slice();
-  if(!recs.length){ toast('还没有记录'); return; }
-  toast('正在打包全部数据…');
+function makeBackupZip(recs){
   var jobs = recs.filter(function(r){ return r.photo; }).map(function(r){
     return blobToU8(r.photo).then(function(u8){ return {name: photoName(r), data: u8}; });
   });
-  Promise.all(jobs).then(function(photoFiles){
+  return Promise.all(jobs).then(function(photoFiles){
     var enc = new TextEncoder();
     var meta = recs.map(function(r){
       return {id:r.id, type:r.type, ts:r.ts, dateKey:r.dateKey, place:r.place, note:r.note,
@@ -1346,11 +1353,165 @@ function exportBackup(){
     ].concat(photoFiles);
     var stamp = new Date();
     var name = '打卡备份_' + stamp.getFullYear() + pad2(stamp.getMonth()+1) + pad2(stamp.getDate()) + '.zip';
-    download(makeZip(files), name);
+    return {blob: makeZip(files), name: name, count: recs.length, photoCount: photoFiles.length};
+  });
+}
+
+function exportBackup(){
+  var recs = state.cache.slice();
+  if(!recs.length){ toast('还没有记录'); return; }
+  toast('正在打包全部数据…');
+  makeBackupZip(recs).then(function(res){
+    download(res.blob, res.name);
     toast('备份已导出');
   }).catch(function(err){
     toast('打包失败：' + (err && err.message ? err.message : '请重试'));
   });
+}
+
+/* ============ 定时自动存档：由「快捷指令」到点打开 ?auto=xxx 触发 ============ */
+function autoBase(){ return location.origin + location.pathname; }
+function autoUrl(kind){ return autoBase() + '?auto=' + kind; }
+function stampName(){
+  var d = new Date();
+  return d.getFullYear() + pad2(d.getMonth()+1) + pad2(d.getDate()) + '_' + pad2(d.getHours()) + pad2(d.getMinutes());
+}
+function showAutoBar(msg, retry){
+  var old = document.getElementById('autoBar');
+  if(old && old.parentNode) old.parentNode.removeChild(old);
+  var bar = document.createElement('div');
+  bar.id = 'autoBar';
+  bar.className = 'auto-bar';
+  bar.innerHTML = '<div class="auto-bar-txt">' + esc(msg) + '</div>' +
+    (retry ? '<button class="auto-bar-btn" id="autoBarBtn">再存一次</button>' : '') +
+    '<button class="auto-bar-x" id="autoBarX" aria-label="关闭">&times;</button>';
+  document.body.appendChild(bar);
+  document.getElementById('autoBarX').onclick = function(){ if(bar.parentNode) bar.parentNode.removeChild(bar); };
+  if(retry){
+    document.getElementById('autoBarBtn').onclick = function(){
+      if(bar.parentNode) bar.parentNode.removeChild(bar);
+      retry();
+    };
+  }
+}
+
+function saveCsvAuto(){
+  return allRecords().then(function(list){
+    if(!list.length){ showAutoBar('还没有打卡记录，等有记录后会按时自动导出'); return; }
+    var name = '打卡记录_全部_' + stampName() + '.csv';
+    download(new Blob([buildCsv(list, state.cfg)], {type:'text/csv;charset=utf-8'}), name);
+    showAutoBar('已生成 ' + name + '（' + list.length + ' 条）· 在「文件 → 下载项」里查看', saveCsvAuto);
+  }).catch(function(err){
+    showAutoBar('导出失败：' + (err && err.message ? err.message : '请重试'), saveCsvAuto);
+  });
+}
+
+function saveBackupAuto(){
+  return allRecords().then(function(list){
+    if(!list.length){ showAutoBar('还没有打卡记录，等有记录后会按时自动备份'); return; }
+    showAutoBar('正在打包备份（含照片），请稍等…');
+    return makeBackupZip(list).then(function(res){
+      download(res.blob, res.name);
+      showAutoBar('已生成 ' + res.name + '（' + res.count + ' 条 / ' + res.photoCount + ' 张照片）· 在「文件 → 下载项」里查看', saveBackupAuto);
+    });
+  }).catch(function(err){
+    showAutoBar('打包失败：' + (err && err.message ? err.message : '请重试'), saveBackupAuto);
+  });
+}
+
+function mailDraft(){
+  return allRecords().then(function(list){
+    if(!list.length){ showAutoBar('还没有打卡记录，没有可发的数据'); return; }
+    var d = new Date();
+    var ym = ymKey(d);
+    var month = list.filter(function(r){ return String(r.dateKey).slice(0,7) === ym; });
+    var st = monthStats(month, state.cfg, ym);
+    var head = '上下班打卡月报 · ' + d.getFullYear() + '年' + (d.getMonth()+1) + '月\n' +
+      '出勤 ' + st.attend + ' 天｜累计 ' + fmtHM(st.totalMs) + '｜迟到 ' + st.lateCnt + ' 次｜早退 ' + st.earlyCnt + ' 次｜缺卡 ' + st.missCnt + ' 天\n\n';
+    var csv = buildCsv(month.length ? month : list, state.cfg);
+    var body = head + (csv.length > 1500 ? csv.slice(0, 1500) + '\n…（明细过长已截断，完整明细请用「导出打卡 CSV」）' : csv);
+    var to = (state.cfg.email || '').trim();
+    var subject = '打卡记录 ' + ym;
+    var url = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    location.href = url;
+    showAutoBar('已打开邮件草稿' + (to ? '（收件人 ' + to + '，检查后点发送）' : '（收件人请手动填写）'));
+  });
+}
+
+function autoRun(){
+  var q = new URLSearchParams(location.search || '');
+  var mode = (q.get('auto') || '').toLowerCase();
+  if(!mode) return;
+  try{ history.replaceState(null, '', autoBase() + (location.hash || '#/home')); }catch(e){}
+  if(mode === 'csv') saveCsvAuto();
+  else if(mode === 'backup') saveBackupAuto();
+  else if(mode === 'mail') mailDraft();
+}
+
+function copyText(text){
+  return new Promise(function(resolve, reject){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(resolve, function(){ reject(new Error('clipboard')); });
+      return;
+    }
+    try{
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error('execCommand'));
+    }catch(e){ reject(e); }
+  });
+}
+
+function openAutoSheet(){
+  var links = {csv: autoUrl('csv'), backup: autoUrl('backup'), mail: autoUrl('mail')};
+  function block(kind, title, desc){
+    return '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-bottom:10px">' +
+      '<div style="font-size:13px;font-weight:600;margin-bottom:2px">' + title + '</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' + desc + '</div>' +
+      '<div style="font-size:12px;word-break:break-all;line-height:1.5;color:var(--ink-2)">' + esc(links[kind]) + '</div>' +
+      '<button class="btn ghost" data-copy="' + kind + '" style="margin-top:9px;padding:8px 0;font-size:13px">复制这条链接</button>' +
+    '</div>';
+  }
+  openSheet(
+    '<h3>定时自动存档</h3>' +
+    '<p class="sh-sub">网页 App 不能自己在后台跑，所以「定时」交给系统「快捷指令」：到点让它打开下面一条链接，页面就会自动把数据存到「文件」App，或弹一封写好的邮件草稿。全程不联网上传、不经第三方。</p>' +
+    '<div class="section-title" style="margin:0 0 8px"><h2>三条触发链接</h2></div>' +
+    block('csv', '存打卡明细（CSV，几 KB）', '每天或每周都合适，Excel 能直接打开') +
+    block('backup', '存完整备份（ZIP，含照片）', '约 200KB/张照片，建议每周或每月跑一次') +
+    block('mail', '弹一封邮件草稿', '收件人可在下面先填好，正文含本月汇总 + 明细') +
+    '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin:14px 0">' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">邮件草稿的收件人（可留空，留空则在邮件里手填）</div>' +
+      '<input id="autoEmail" type="email" inputmode="email" placeholder="例如 me@qq.com" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:14px;background:#fbfbf9">' +
+    '</div>' +
+    '<div class="section-title" style="margin:0 0 8px"><h2>在「快捷指令」里配一次</h2></div>' +
+    '<ol class="steps">' +
+      '<li>打开「快捷指令」→ 底部「自动化」→ 右上「+」</li>' +
+      '<li>选「特定时间」→ 设成你要的时间（如每周日 21:00，或每天 18:30）→ 选「每周」或「每天」→ 下一步</li>' +
+      '<li>添加操作「打开 URL」，粘贴上面第一条（或第二条）链接</li>' +
+      '<li>关掉「运行前询问」，点完成；不关的话每次都要你点确认</li>' +
+      '<li>到点手机会自动打开本页并下载，文件在「文件 → 下载项」里</li>' +
+    '</ol>' +
+    '<p class="list-simple">先手动试一次：把链接粘到 Safari 地址栏打开，看「文件」里是否出现文件。iOS 偶尔会拦自动下载，这时页面顶部会出现一条绿色提示，点上面的「再存一次」即可。</p>' +
+    '<p class="list-simple">关于「直接发出去」：网页本身发不了邮件（没有服务器），所以邮件是写好草稿、你点一下发送。若要完全无人值守地发信，得接第三方发信服务（EmailJS 之类），需要注册账号且打卡数据会经过第三方，默认不做。</p>' +
+    '<div class="btn-row"><button class="btn primary" id="btnAutoClose">知道了</button></div>'
+  );
+  var em = document.getElementById('autoEmail');
+  em.value = state.cfg.email || '';
+  em.onchange = function(){
+    var v = em.value.trim();
+    setCfg({email:v}).then(function(cfg){ state.cfg = cfg; toast(v ? '收件人已保存' : '已清空收件人'); });
+  };
+  document.querySelectorAll('[data-copy]').forEach(function(b){
+    b.onclick = function(){
+      var kind = b.getAttribute('data-copy');
+      copyText(links[kind]).then(function(){ toast('链接已复制'); }).catch(function(){ toast('复制失败，请长按链接手动复制'); });
+    };
+  });
+  document.getElementById('btnAutoClose').onclick = closeSheet;
 }
 
 /* ============ 设置页 ============ */
@@ -1486,6 +1647,7 @@ function bindEvents(){
   document.getElementById('rowCsv').onclick = function(){ exportCsv('all'); };
   document.getElementById('rowZip').onclick = function(){ exportZip('all'); };
   document.getElementById('rowBackup').onclick = exportBackup;
+  document.getElementById('rowAuto').onclick = openAutoSheet;
   document.getElementById('btnExportCsv2').onclick = function(){ exportCsv('month'); };
   bindSetting('cfgInTime', 'inTime', false);
   bindSetting('cfgOutTime', 'outTime', false);
@@ -1507,6 +1669,8 @@ function init(){
     state.cfg = cfg;
     renderSettingsForm();
     return renderAll();
+  }).then(function(){
+    autoRun();
   }).catch(function(err){
     document.getElementById('homeRecent').innerHTML =
       '<div class="empty-state"><b>本地存储打不开</b>请用 Safari 打开本页；无痕模式会禁用本地存储。' +
@@ -1526,6 +1690,11 @@ window.__dk = {
   processPhoto: processPhoto,
   groupDays: groupDays,
   monthStats: monthStats,
+  autoRun: autoRun,
+  saveCsvAuto: saveCsvAuto,
+  saveBackupAuto: saveBackupAuto,
+  mailDraft: mailDraft,
+  autoUrl: autoUrl,
   state: state
 };
 
